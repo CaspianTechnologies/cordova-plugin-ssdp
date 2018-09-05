@@ -1,0 +1,13 @@
+{
+  "name": "cordova-plugin-ssdp",
+  "version": "0.0.1",
+  "description": "SSDP cordova plugin",
+  "cordova": {
+    "id": "cordova-plugin-ssdp",
+    "platforms": [
+      "android",
+      "ios",
+      "windows"
+    ]
+  }
+}
