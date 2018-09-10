@@ -6,9 +6,9 @@ exports.startSearching = function(target) {
   });
 }
 
-exports.startAdvertising = function(target) {
+exports.startAdvertising = function(target, port) {
   return new Promise(function(success, error) {
-    exec(success, error, "Ssdp", "startAdvertising", [target])
+    exec(success, error, "Ssdp", "startAdvertising", [target, port])
   });
 }
 
