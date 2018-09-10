@@ -6,7 +6,6 @@ import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
 import android.util.Log;
 
 import capital.spatium.plugin.ssdp.SsdpChannel;
@@ -53,35 +52,46 @@ public class Ssdp extends CordovaPlugin {
     @Override
     public boolean execute(String action, JSONArray args, final CallbackContext callbackContext) throws JSONException {
         Log.d(TAG, action);
+        Log.d(TAG, args.toString());
 
-        if (action == "startSearching") {
-            search();
+        if (action.equals("startSearching")) {
+            search(callbackContext);
             return true;
-        } else if (action == "startAdvertising") {
-            advertise();
+        } else if (action.equals("startAdvertising")) {
+            advertise(callbackContext);
             return true;
-        } else if (action == "stop") {
-            stop();
+        } else if (action.equals("stop")) {
+            stop(callbackContext);
             return true;
-        } else if (action == "setDiscoveredCallback") {
+        } else if (action.equals("setDiscoveredCallback")) {
             return true;
-        } else {
-            return false;
+        } else if (action.equals("setGoneCallback")) {
+          return true;
         }
+        
+        PluginResult result = new PluginResult(PluginResult.Status.INVALID_ACTION);
+        callbackContext.sendPluginResult(result);
+        return false;
     }
 
-    private void search() {
+    private void search(final CallbackContext callbackContext) {
       thread = new SearchThread();
       thread.start();
+      PluginResult result = new PluginResult(PluginResult.Status.OK);
+      callbackContext.sendPluginResult(result);
     }
 
-    private void stop() {
+    private void stop(final CallbackContext callbackContext) {
         thread.interrupt();
+        PluginResult result = new PluginResult(PluginResult.Status.OK);
+        callbackContext.sendPluginResult(result);
     }
 
-    private void advertise() {
+    private void advertise(final CallbackContext callbackContext) {
         thread = new AdvertiseThread();
         thread.start();
+        PluginResult result = new PluginResult(PluginResult.Status.OK);
+        callbackContext.sendPluginResult(result);
     }
 
     private static byte[] convertIpAddress(int ip) {
@@ -92,7 +102,7 @@ public class Ssdp extends CordovaPlugin {
               (byte) ((ip >> 24) & 0xFF)};
     }
 
-    private boolean containsTarget(@NonNull SsdpMessage message) {
+    private boolean containsTarget(SsdpMessage message) {
       if (message.getHeader("ST") != null && message.getHeader("ST").equals(target)) {
         return true;
       }
@@ -114,6 +124,7 @@ public class Ssdp extends CordovaPlugin {
     class SearchThread extends Thread {
         @Override
         public void run() {
+            Log.d(TAG, "search thread started");
             try {
                 if (ssdpService != null) {
                     ssdpService.close();
@@ -132,6 +143,7 @@ public class Ssdp extends CordovaPlugin {
 
                 for (int i = 0; i < 3; i++) {
                     ssdpService.sendMulticast(searchMsg);
+                    Log.d(TAG, "send msearch");
                     Thread.sleep(2000);
                 }
 
@@ -154,7 +166,6 @@ public class Ssdp extends CordovaPlugin {
             }
 
             final String msgString = new String(packet.getData()).trim();
-
             SsdpMessage message = null;
             try {
                 message = SsdpMessage.toMessage(msgString);
