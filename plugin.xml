@@ -21,6 +21,13 @@
         <uses-permission android:name="android.permission.INTERNET" />
       </config-file>
       <source-file src="src/android/capital/spatium/plugin/ssdp/Ssdp.java" target-dir="src/capital/spatium/plugin/ssdp" />
+      <source-file src="src/android/capital/spatium/plugin/ssdp/SsdpChannel.java" target-dir="src/capital/spatium/plugin/ssdp" />
+      <source-file src="src/android/capital/spatium/plugin/ssdp/SsdpCommonHeaders.java" target-dir="src/capital/spatium/plugin/ssdp" />
+      <source-file src="src/android/capital/spatium/plugin/ssdp/SsdpMessage.java" target-dir="src/capital/spatium/plugin/ssdp" />
+      <source-file src="src/android/capital/spatium/plugin/ssdp/SsdpMessageType.java" target-dir="src/capital/spatium/plugin/ssdp" />
+      <source-file src="src/android/capital/spatium/plugin/ssdp/SsdpNotificationType.java" target-dir="src/capital/spatium/plugin/ssdp" />
+      <source-file src="src/android/capital/spatium/plugin/ssdp/SsdpPacketListener.java" target-dir="src/capital/spatium/plugin/ssdp" />
+      <source-file src="src/android/capital/spatium/plugin/ssdp/SsdpService.java" target-dir="src/capital/spatium/plugin/ssdp" />
     </platform>
 
     <platform name="windows">

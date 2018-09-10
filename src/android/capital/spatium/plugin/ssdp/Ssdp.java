@@ -1,6 +1,25 @@
 package capital.spatium.plugin.ssdp;
 
+
+import android.content.Context;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
+import android.os.Build;
+import android.os.Bundle;
+import android.support.annotation.NonNull;
 import android.util.Log;
+
+import capital.spatium.plugin.ssdp.SsdpChannel;
+import capital.spatium.plugin.ssdp.SsdpMessage;
+import capital.spatium.plugin.ssdp.SsdpMessageType;
+import capital.spatium.plugin.ssdp.SsdpPacketListener;
+import capital.spatium.plugin.ssdp.SsdpService;
+
+import java.io.IOException;
+import java.net.DatagramPacket;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.util.Date;
 
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.PluginResult;
@@ -15,7 +34,16 @@ import org.json.JSONException;
 
 public class Ssdp extends CordovaPlugin {
 
+    private Thread thread;
+    private SsdpService ssdpService = null;
+    private String target = DEFAULT_TARGET;
+
     private static final String TAG = "Cordova SSDP";
+    private static final String DEFAULT_TARGET = "spatandroid";
+    private static final String SSDP_ADDRESS = 
+            SsdpChannel.SSDP_MCAST_ADDRESS.getAddress().getHostName() 
+            + ":" 
+            +  SsdpChannel.SSDP_MCAST_ADDRESS.getPort();
 
     @Override
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
@@ -27,10 +55,13 @@ public class Ssdp extends CordovaPlugin {
         Log.d(TAG, action);
 
         if (action == "startSearching") {
+            search();
             return true;
         } else if (action == "startAdvertising") {
+            advertise();
             return true;
         } else if (action == "stop") {
+            stop();
             return true;
         } else if (action == "setDiscoveredCallback") {
             return true;
@@ -38,5 +69,181 @@ public class Ssdp extends CordovaPlugin {
             return false;
         }
     }
+
+    private void search() {
+      thread = new SearchThread();
+      thread.start();
+    }
+
+    private void stop() {
+        thread.interrupt();
+    }
+
+    private void advertise() {
+        thread = new AdvertiseThread();
+        thread.start();
+    }
+
+    private static byte[] convertIpAddress(int ip) {
+      return new byte[] {
+              (byte) (ip & 0xFF),
+              (byte) ((ip >> 8) & 0xFF),
+              (byte) ((ip >> 16) & 0xFF),
+              (byte) ((ip >> 24) & 0xFF)};
+    }
+
+    private boolean containsTarget(@NonNull SsdpMessage message) {
+      if (message.getHeader("ST") != null && message.getHeader("ST").equals(target)) {
+        return true;
+      }
+      if (message.getHeader("NT") != null && message.getHeader("NT").equals(target)) {
+        return true;
+      }
+      return false;
+    }
+
+    private NetworkInterface getWifiNetworkInterface() throws IOException {
+        Context context = this.cordova.getActivity().getApplicationContext();
+        WifiManager wifiMgr = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+        WifiInfo wifiInfo = wifiMgr.getConnectionInfo();
+        int ip = wifiInfo.getIpAddress();
+        byte[] b = convertIpAddress(ip);
+        return NetworkInterface.getByInetAddress(InetAddress.getByAddress(b));
+    }
+
+    class SearchThread extends Thread {
+        @Override
+        public void run() {
+            try {
+                if (ssdpService != null) {
+                    ssdpService.close();
+                }
+
+                NetworkInterface ni = getWifiNetworkInterface();
+                ssdpService = new SsdpService(ni, searchPacketListener);
+
+                ssdpService.listen();
+
+                SsdpMessage searchMsg = new SsdpMessage(SsdpMessageType.MSEARCH);
+                searchMsg.setHeader("HOST", SSDP_ADDRESS);
+                searchMsg.setHeader("MAN", "\"ssdp:discover\"");
+                searchMsg.setHeader("MX", "2");
+                searchMsg.setHeader("ST", target);
+
+                for (int i = 0; i < 3; i++) {
+                    ssdpService.sendMulticast(searchMsg);
+                    Thread.sleep(2000);
+                }
+
+                while(!this.isInterrupted()) {}
+
+                ssdpService.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private SsdpPacketListener searchPacketListener = new SsdpPacketListener() {
+        @Override
+        public void received(final DatagramPacket packet) {
+            if (packet == null || packet.getData() == null) {
+                return;
+            }
+
+            final String msgString = new String(packet.getData()).trim();
+
+            SsdpMessage message = null;
+            try {
+                message = SsdpMessage.toMessage(msgString);
+            } catch (IllegalArgumentException e) {}
+
+            if (message == null || !containsTarget(message)) {
+                return;
+            }
+
+            final String addr = packet.getAddress().getHostAddress() + ":" + packet.getPort();
+            Log.d(TAG, addr);
+            Log.d(TAG, msgString);
+            Log.d(TAG, "__________________");
+        }
+    };
+
+    class AdvertiseThread extends Thread {
+        @Override
+        public void run() {
+            try {
+                if (ssdpService != null) {
+                    ssdpService.close();
+                }
+
+                NetworkInterface ni = getWifiNetworkInterface();
+                ssdpService = new SsdpService(ni, advertisePacketListener);
+
+                ssdpService.listen();
+
+                SsdpMessage aliveMsg = new SsdpMessage(SsdpMessageType.NOTIFY);
+                aliveMsg.setHeader("HOST", SSDP_ADDRESS);
+                aliveMsg.setHeader("NTS", SsdpNotificationType.ALIVE.getRepresentation());
+                aliveMsg.setHeader("NT", target);
+                ssdpService.sendMulticast(aliveMsg);
+
+                while(!this.isInterrupted()) {}
+
+                SsdpMessage byebyeMsg = new SsdpMessage(SsdpMessageType.NOTIFY);
+                byebyeMsg.setHeader("HOST", SSDP_ADDRESS);
+                byebyeMsg.setHeader("NTS", SsdpNotificationType.BYEBYE.getRepresentation());
+                byebyeMsg.setHeader("NT", target);
+                ssdpService.sendMulticast(byebyeMsg);
+
+                ssdpService.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private SsdpPacketListener advertisePacketListener = new SsdpPacketListener() {
+        @Override
+        public void received(final DatagramPacket packet) {
+            if (packet == null || packet.getData() == null) {
+                return;
+            }
+
+            final String msgString = new String(packet.getData()).trim();
+            SsdpMessage message = null;
+            try {
+                message = SsdpMessage.toMessage(msgString);
+            } catch (IllegalArgumentException e) {}
+
+            if (message == null || !containsTarget(message)) {
+                return;
+            }
+
+            final String addr = packet.getAddress().getHostAddress() + ":" + packet.getPort();
+            Log.d(TAG, addr);
+            Log.d(TAG, msgString);
+            Log.d(TAG, "__________________");
+
+            if (message.getType() != SsdpMessageType.MSEARCH) {
+                return;
+            }
+
+            SsdpMessage searchMsg = new SsdpMessage(SsdpMessageType.RESPONSE);
+            searchMsg.setHeader("CACHE-CONTROL", "100");
+            searchMsg.setHeader("DATE", new Date().toString());
+            searchMsg.setHeader("SERVER", "Android/" + Build.VERSION.RELEASE);
+            searchMsg.setHeader("ST", target);
+
+            try {
+                ssdpService.sendUnicast(searchMsg, packet.getSocketAddress());
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+        }
+    };
 
 }
