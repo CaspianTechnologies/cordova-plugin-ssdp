@@ -33,7 +33,13 @@ namespace Client
             controlPoint = new ControlPoint(logger) { Target = "spatium" };
             controlPoint.DeviceDiscovered += DiscoveredCallback;
             controlPoint.DeviceGone += GoneCallback;
-            rootDevice = new RootDevice("spatium", "123-456-789", logger);
+            rootDevice = new RootDevice(logger)
+            {
+                Target = "spatium",
+                Name = "Spatium device",
+                USN = "123-321",
+                Port = 12345
+            };
             eventTimer = new EventTimer(logger);
             eventTimer.Tick += (s, t) =>
             {
@@ -136,12 +142,12 @@ namespace Client
 
         private void DiscoveredCallback(object sender, Device device)
         {
-            Devices.Items.Add($"[{device.IP} - {device.USN}]");
+            Devices.Items.Add(device.ToString());
         }
 
         private void GoneCallback(object sender, Device device)
         {
-            Devices.Items.Remove($"[{device.IP} - {device.USN}]");
+            Devices.Items.Remove(device.ToString());
         }
 
         private void Tick_Click(object sender, RoutedEventArgs e)

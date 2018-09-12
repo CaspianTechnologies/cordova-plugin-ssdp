@@ -1,33 +1,33 @@
 let controlPoint;
-let discoveredCallback;
 
 function initializeControlPoint() {
-    return new Promise(function (success, error) {
-        if (!controlPoint) {
-            controlPoint = new SSDP.ControlPoint();
-            controlPoint.addEventListener('devicediscovered', discoveredCallback);
-            controlPoint.start().then(success, error);
-        } else {
-            success();
-        }
-    });
+    if (!controlPoint) {
+        controlPoint = new SSDP.ControlPoint();
+    }
 }
 
 module.exports = {
     startSearching: function (success, error, params) {
-        initializeControlPoint()
+        initializeControlPoint();
+        const target = params[0];
+        controlPoint.target = target;
+        controlPoint.start()
             .then(function () {
-                const target = params[0];
-                controlPoint.searchDevices(target).then(res => {
+                controlPoint.searchDevices().then(res => {
                     console.log('proxy - searchDevices complete. Res:', res);
                     success(res);
                 }, error);
-            })
-            .catch(error);
+            }, error);
     },
 
     setDiscoveredCallback: function (callback, _, params) {
-        discoveredCallback = callback;
+        initializeControlPoint();
+        controlPoint.addEventListener('devicediscovered', callback);
+    },
+
+    setGoneCallback: function (callback, _, params) {
+        initializeControlPoint();
+        controlPoint.addEventListener('devicegone', callback);
     }
 };
 

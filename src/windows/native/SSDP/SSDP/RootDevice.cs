@@ -10,18 +10,19 @@ namespace SSDP
 {
     public sealed class RootDevice
     {
+        public string Target { get; set; } = "ssdp:all";
+        public string USN { get; set; } = "UnknownDevice";
+        public string Name { get; set; } = "NoName";
+        public int Port { get; set; } = -1;
+
         private DatagramSocket multicastSsdpSocket;
         private ILogger logger;
-        private string target;
-        private string usn;
         private bool isStarted = false;
 
-        public RootDevice(string target, string usn) : this(target, usn, new SystemLogger()) { }
+        public RootDevice() : this(new SystemLogger()) { }
 
-        public RootDevice(string target, string usn, ILogger logger)
+        public RootDevice(ILogger logger)
         {
-            this.target = target;
-            this.usn = usn;
             this.logger = logger ?? new SystemLogger();
         }
 
@@ -33,11 +34,14 @@ namespace SSDP
                 {
                     Type = SsdpMessageType.AdvertiseAlive,
                     Host = Constants.SSDP_ADDRESS,
-                    CacheControl = "max-age",
-                    Location = "http://192.168.255.255:65535/fake.xml",
-                    NT = target,
+                    CacheControl = "max-age = 30",
+                    NT = Target,
                     NTS = "ssdp:alive",
-                    USN = usn,
+                    Server = Name,
+                    USN = USN,
+                    AdditionalHeaders = new Dictionary<string, string> {
+                        { "PORT", Port.ToString() }
+                    },
                 };
                 
                 var outputStream = await multicastSsdpSocket.GetOutputStreamAsync(Constants.SSDP_HOST, Constants.SSDP_PORT);
@@ -55,9 +59,13 @@ namespace SSDP
                 {
                     Type = SsdpMessageType.AdvertiseByeBye,
                     Host = Constants.SSDP_ADDRESS,
-                    NT = target,
+                    NT = Target,
                     NTS = "ssdp:byebye",
-                    USN = usn,
+                    Server = Name,
+                    USN = USN,
+                    AdditionalHeaders = new Dictionary<string, string> {
+                        { "PORT", Port.ToString() }
+                    },
                 };
 
                 var outputStream = await multicastSsdpSocket.GetOutputStreamAsync(Constants.SSDP_HOST, Constants.SSDP_PORT);
@@ -72,12 +80,14 @@ namespace SSDP
             SsdpMessage searchResponse = new SsdpMessage
             {
                 Type = SsdpMessageType.SearchResponse,
-                CacheControl = "max-age",
+                CacheControl = "max-age = 30",
                 Date = DateTimeOffset.UtcNow,
-                Location = "http://192.168.255.255:65535/fake.xml",
-                Server = "Spatium Confirmation Device",
-                ST = target,
-                USN = usn,
+                Server = Name,
+                ST = Target,
+                USN = USN,
+                AdditionalHeaders = new Dictionary<string, string> {
+                    { "PORT", Port.ToString() }
+                },
             };
 
             var unicastSocket = new DatagramSocket();

@@ -7,7 +7,8 @@ namespace SSDP
     public sealed class Device
     {
         public string IP { get; set; }
-        public string Host { get; set; }
+        public int Port { get; set; }
+        public string Name { get; set; }
         public string USN { get; set; }
         public DateTimeOffset Date { get; set; }
         public string CacheControl { get; set; }
@@ -35,15 +36,20 @@ namespace SSDP
 
         public static Device ConstructDevice(HostName ip, SsdpMessage message)
         {
+            int port = -1;
+            if (message.AdditionalHeaders.TryGetValue("PORT", out string portStr))
+            {
+                int.TryParse(portStr, out port);
+            }
             var device = new Device
             {
                 IP = ip.CanonicalName,
-                Host = message.Host,
-                USN = message.USN,
+                Port = port,
+                USN = message.USN ?? "UnknownUSN",
+                Name = message.Server ?? "NoName",
                 Date = message.Date,
                 CacheControl = message.CacheControl,
             };
-            if (device.USN == null) device.USN = "UnknownUSN";
             return device;
         }
 
@@ -53,6 +59,11 @@ namespace SSDP
             hashCode = hashCode * -1521134295 + EqualityComparer<string>.Default.GetHashCode(IP);
             hashCode = hashCode * -1521134295 + EqualityComparer<string>.Default.GetHashCode(USN);
             return hashCode;
+        }
+
+        public override string ToString()
+        {
+            return $"[{IP}:{Port}] {Name}";
         }
     }
 }
