@@ -28,6 +28,15 @@ module.exports = {
     setGoneCallback: function (callback, _, params) {
         initializeControlPoint();
         controlPoint.addEventListener('devicegone', callback);
+    },
+
+    stop: function (success, error, params) {
+        try {
+            if (controlPoint) controlPoint.stop();
+            success();
+        } catch (e) {
+            error(e);
+        }
     }
 };
 
