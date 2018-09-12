@@ -53,9 +53,13 @@
                 <TextBox x:Name="LocalIp" Header="Local IP" IsReadOnly="True"/>
             </StackPanel>
             <StackPanel Grid.ColumnSpan="2" Grid.Row="2">
-                <TextBox x:Name="Devices" Header="Devices" IsReadOnly="True" AcceptsReturn="True" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" TextWrapping="Wrap"
-                         ScrollViewer.VerticalScrollBarVisibility="Auto" Height="500"/>
-                <Button x:Name="Tick" Click="Tick_Click" Content="Start Tick"/>
+                <!--<TextBox x:Name="Devices" Header="Devices" IsReadOnly="True" AcceptsReturn="True" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" TextWrapping="Wrap"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto" Height="200"/>-->
+                <StackPanel Orientation="Horizontal">
+                    <Button x:Name="Tick" Click="Tick_Click" Content="Start Tick"/>
+                    <Button x:Name="ListenSSDP" Click="ListenSSDP_Click" Content="Listen SSDP"/>
+                </StackPanel>
+                <ListView x:Name="Devices" Header="Discovered devices:"/>
             </StackPanel>
         </Grid>
 

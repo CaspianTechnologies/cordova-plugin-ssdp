@@ -22,23 +22,25 @@ namespace Client
         private RootDevice rootDevice;
         private EventTimer eventTimer;
         private ILogger logger;
+        private DatagramSocket socket;
 
         public MainPage()
         {
-            this.InitializeComponent();
+            InitializeComponent();
 
             logger = new TextBoxLogger(svLog, TbLog);
 
-            this.controlPoint = new Contrnt(logger);
+            controlPoint = new ControlPoint(logger) { Target = "spatium" };
             controlPoint.DeviceDiscovered += DiscoveredCallback;
-            this.rootDevice = new RootDevice("spatium", "123-456-789", logger);
-            this.eventTimer = new EventTimer(logger);
+            controlPoint.DeviceGone += GoneCallback;
+            rootDevice = new RootDevice("spatium", "123-456-789", logger);
+            eventTimer = new EventTimer(logger);
             eventTimer.Tick += (s, t) =>
             {
                 logger.WriteLine(t.ToString());
             };
 
-            this.Loaded += (s, e) =>
+            Loaded += (s, e) =>
             {
                 try
                 {
@@ -63,7 +65,7 @@ namespace Client
 
         private async void SearchDevices_Click(object sender, RoutedEventArgs e)
         {
-            await controlPoint.SearchDevices("spatium");
+            await controlPoint.SearchDevices();
         }
 
         private async void RootDeviceMode_Click(object sender, RoutedEventArgs e)
@@ -134,12 +136,33 @@ namespace Client
 
         private void DiscoveredCallback(object sender, Device device)
         {
-            Devices.Text += $"[{device.IP} - {device.USN}]\n";
+            Devices.Items.Add($"[{device.IP} - {device.USN}]");
+        }
+
+        private void GoneCallback(object sender, Device device)
+        {
+            Devices.Items.Remove($"[{device.IP} - {device.USN}]");
         }
 
         private void Tick_Click(object sender, RoutedEventArgs e)
         {
             eventTimer.Start();
+        }
+
+        private async void ListenSSDP_Click(object sender, RoutedEventArgs e)
+        {
+            socket = new DatagramSocket();
+            socket.MessageReceived += (s, args) =>
+            {
+                var reader = args.GetDataReader();
+                var data = reader.ReadString(reader.UnconsumedBufferLength);
+                string address = $"{args.RemoteAddress.CanonicalName}:{args.RemotePort}";
+                logger.WriteLine($"MULTICAST [{address}]\n{data}");
+            };
+            socket.Control.MulticastOnly = true;
+            await socket.BindServiceNameAsync(Constants.SSDP_PORT);
+            socket.JoinMulticastGroup(Constants.SSDP_HOST);
+            logger.WriteLine($"Start listening multicast {Constants.SSDP_ADDRESS}");
         }
     }
 }

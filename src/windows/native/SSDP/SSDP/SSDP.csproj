@@ -110,6 +110,7 @@
     <Compile Include="Device.cs" />
     <Compile Include="DictionaryExtensions.cs" />
     <Compile Include="EventTimer.cs" />
+    <Compile Include="InvalidMessageException.cs" />
     <Compile Include="SsdpMessageType.cs" />
     <Compile Include="Constants.cs" />
     <Compile Include="ControlPoint.cs" />

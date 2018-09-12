@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Threading;
-using System.Threading.Tasks;
-using Windows.Foundation;
 using Windows.UI.Core;
 
 namespace SSDP
@@ -19,7 +17,7 @@ namespace SSDP
 
         public EventTimer(ILogger logger)
         {
-            this.dispatcher = CoreWindow.GetForCurrentThread().Dispatcher;
+            dispatcher = CoreWindow.GetForCurrentThread().Dispatcher;
             this.logger = logger;
         }
 

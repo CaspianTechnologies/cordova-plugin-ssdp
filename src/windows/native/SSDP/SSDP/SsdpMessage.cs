@@ -77,14 +77,14 @@ namespace SSDP
                     }
                     else
                     {
-                        throw new Exception("Invalid ssdp message");
+                        throw new InvalidMessageException(rawMessage);
                     }
                 case "M-SEARCH * HTTP/1.1":
                     return SsdpMessageType.SearchRequest;
                 case "HTTP/1.1 200 OK":
                     return SsdpMessageType.SearchResponse;
                 default:
-                    throw new Exception("Invalid ssdp message");
+                    throw new InvalidMessageException(rawMessage);
             }
         }
 
@@ -100,7 +100,7 @@ namespace SSDP
                 case SsdpMessageType.SearchResponse:
                     return "HTTP/1.1 200 OK";
                 default:
-                    throw new Exception("Invalid ssdp message");
+                    throw new InvalidMessageException("Invalid message type");
             }
         }
 
@@ -168,7 +168,7 @@ namespace SSDP
                     });
                     break;
                 default:
-                    throw new Exception("Invalid ssdp message type");
+                    throw new InvalidMessageException("Invalid ssdp message type");
             }
             messageLines.AddRange(DictToList(AdditionalHeaders));
             messageLines.Add("");

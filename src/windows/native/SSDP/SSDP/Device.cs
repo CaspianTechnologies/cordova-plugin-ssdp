@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Windows.Networking;
 
 namespace SSDP
 {
@@ -8,7 +9,6 @@ namespace SSDP
         public string IP { get; set; }
         public string Host { get; set; }
         public string USN { get; set; }
-        public string Server { get; set; }
         public DateTimeOffset Date { get; set; }
         public string CacheControl { get; set; }
         public bool IsExpired
@@ -21,26 +21,37 @@ namespace SSDP
 
         public override bool Equals(object obj)
         {
-            return obj is Device device &&
-                   IP == device.IP &&
-                   Host == device.Host &&
-                   USN == device.USN &&
-                   Server == device.Server &&
-                   Date.Equals(device.Date) &&
-                   CacheControl == device.CacheControl &&
-                   IsExpired == device.IsExpired;
+            if (obj == null) return false;
+            if (!(obj is Device objAsDevice)) return false;
+            else return Equals(objAsDevice);
+        }
+
+        private bool Equals(Device other)
+        {
+            if (other == null) return false;
+            return USN == other.USN 
+                && IP == other.IP;
+        }
+
+        public static Device ConstructDevice(HostName ip, SsdpMessage message)
+        {
+            var device = new Device
+            {
+                IP = ip.CanonicalName,
+                Host = message.Host,
+                USN = message.USN,
+                Date = message.Date,
+                CacheControl = message.CacheControl,
+            };
+            if (device.USN == null) device.USN = "UnknownUSN";
+            return device;
         }
 
         public override int GetHashCode()
         {
-            var hashCode = -1754731209;
+            var hashCode = -195774287;
             hashCode = hashCode * -1521134295 + EqualityComparer<string>.Default.GetHashCode(IP);
-            hashCode = hashCode * -1521134295 + EqualityComparer<string>.Default.GetHashCode(Host);
             hashCode = hashCode * -1521134295 + EqualityComparer<string>.Default.GetHashCode(USN);
-            hashCode = hashCode * -1521134295 + EqualityComparer<string>.Default.GetHashCode(Server);
-            hashCode = hashCode * -1521134295 + EqualityComparer<DateTimeOffset>.Default.GetHashCode(Date);
-            hashCode = hashCode * -1521134295 + EqualityComparer<string>.Default.GetHashCode(CacheControl);
-            hashCode = hashCode * -1521134295 + IsExpired.GetHashCode();
             return hashCode;
         }
     }

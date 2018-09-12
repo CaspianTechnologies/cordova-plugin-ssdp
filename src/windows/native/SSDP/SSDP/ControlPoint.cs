@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Windows.Foundation;
+using Windows.Networking.Connectivity;
 using Windows.Networking.Sockets;
 using Windows.Storage.Streams;
 using Windows.UI.Core;
@@ -13,6 +13,8 @@ namespace SSDP
     public sealed class ControlPoint
     {
         public event EventHandler<Device> DeviceDiscovered;
+        public event EventHandler<Device> DeviceGone;
+        public string Target { get; set; } = "ssdp:all";
 
         private DatagramSocket multicastSsdpSocket;
         private DatagramSocket unicastLocalSocket;
@@ -30,7 +32,7 @@ namespace SSDP
             this.logger = logger;
         }
 
-        public IAsyncOperation<uint> SearchDevices(string target)
+        public IAsyncOperation<uint> SearchDevices()
         {
             var cancellationTokenSource = new CancellationTokenSource();
             var token = cancellationTokenSource.Token;
@@ -42,7 +44,7 @@ namespace SSDP
                     Host = Constants.SSDP_ADDRESS,
                     MAN = "ssdp:discover",
                     MX = "1",
-                    ST = target,
+                    ST = Target,
                     UserAgent = "Spatium Wallet Device",
                 };
 
@@ -54,48 +56,6 @@ namespace SSDP
             }, token).AsAsyncOperation();
         }
 
-        private async Task<uint> SendSearchDevicesRequest(SsdpMessage request, CancellationToken token)
-        {
-            token.ThrowIfCancellationRequested();
-            var outputStream = await multicastSsdpSocket.GetOutputStreamAsync(Constants.SSDP_HOST, Constants.SSDP_PORT);
-            var writer = new DataWriter(outputStream);
-            writer.WriteString(request.ToString());
-            return await writer.StoreAsync();
-        }
-  
-        private async void UnicastLocalSocket_MessageReceived(DatagramSocket sender, DatagramSocketMessageReceivedEventArgs args)
-        {
-            string address = $"{args.RemoteAddress.CanonicalName}:{args.RemotePort}";
-            var reader = args.GetDataReader();
-            var data = reader.ReadString(reader.UnconsumedBufferLength);
-            SsdpMessage ssdpMessage = new SsdpMessage(data);
-            if (!devices.Select(d => d.USN = ssdpMessage.USN).Any())
-            {
-                Device device = new Device
-                {
-                    IP = args.RemoteAddress.CanonicalName,
-                    Host = ssdpMessage.Host,
-                    USN = ssdpMessage.USN,
-                    Server = ssdpMessage.Server,
-                    Date = ssdpMessage.Date,
-                    CacheControl = ssdpMessage.CacheControl,
-                };
-                devices.Add(device);
-
-                if (DeviceDiscovered != null)
-                {
-                    await dispatcher.RunAsync(CoreDispatcherPriority.Normal,
-                        new DispatchedHandler(() =>
-                        {
-                            DeviceDiscovered?.Invoke(this, device);
-                        }));
-                }
-
-                //logger.WriteLine($"SSDP MESSAGE:\n{ssdpMessage.ToString()}\n");
-                devices.Add(device);
-            }
-        }
-
         public IAsyncAction Start()
         {
             return Task.Run(async () =>
@@ -104,6 +64,8 @@ namespace SSDP
                 {
                     return;
                 }
+
+                //var profiles = NetworkInformation.GetConnectionProfiles();
 
                 multicastSsdpSocket = new DatagramSocket();
                 multicastSsdpSocket.MessageReceived += MulticastSsdpSocket_MessageReceived;
@@ -123,18 +85,6 @@ namespace SSDP
             }).AsAsyncAction();
         }
 
-        private void MulticastSsdpSocket_MessageReceived(DatagramSocket sender, DatagramSocketMessageReceivedEventArgs args)
-        {
-            string address = $"{args.RemoteAddress.CanonicalName}:{args.RemotePort}";
-            var reader = args.GetDataReader();
-            var data = reader.ReadString(reader.UnconsumedBufferLength);
-            if (!data.Contains("spatium"))
-            {
-                return;
-            }
-            logger.WriteLine($"MULTICAST [{address}]\n{data}");
-        }
-
         public void Stop()
         {
             if (!isStarted)
@@ -150,6 +100,105 @@ namespace SSDP
             isStarted = false;
 
             logger.WriteLine("ControlPoint stopped.");
+        }
+
+        private async Task<uint> SendSearchDevicesRequest(SsdpMessage request, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            var outputStream = await multicastSsdpSocket.GetOutputStreamAsync(Constants.SSDP_HOST, Constants.SSDP_PORT);
+            var writer = new DataWriter(outputStream);
+            writer.WriteString(request.ToString());
+            return await writer.StoreAsync();
+        }
+
+        private async Task<bool> RegisterDevice(Device device)
+        {
+            if (devices.Contains(device))
+            {
+                return false;
+            }
+
+            if (DeviceDiscovered != null)
+            {
+                await dispatcher.RunAsync(CoreDispatcherPriority.Normal,
+                    new DispatchedHandler(() =>
+                    {
+                        DeviceDiscovered?.Invoke(this, device);
+                    }));
+            }
+            devices.Add(device);
+            return true;
+        }
+
+        private async Task<bool> UnregisterDevice(Device device)
+        {
+            if (!devices.Contains(device))
+            {
+                return false;
+            }
+
+            if (DeviceGone != null)
+            {
+                await dispatcher.RunAsync(CoreDispatcherPriority.Normal,
+                    new DispatchedHandler(() =>
+                    {
+                        DeviceGone?.Invoke(this, device);
+                    }));
+            }
+            devices.Remove(device);
+            return true;
+        }
+
+        private async void UnicastLocalSocket_MessageReceived(DatagramSocket sender, DatagramSocketMessageReceivedEventArgs args)
+        {
+            string address = $"{args.RemoteAddress.CanonicalName}:{args.RemotePort}";
+            var reader = args.GetDataReader();
+            var data = reader.ReadString(reader.UnconsumedBufferLength);
+            logger.WriteLine($"UNICAST ControlPoint [{address}]\n{data}");
+            try
+            {
+                SsdpMessage ssdpMessage = new SsdpMessage(data);
+                Device device = Device.ConstructDevice(args.RemoteAddress, ssdpMessage);
+                await RegisterDevice(device);
+            }
+            catch (InvalidMessageException e)
+            {
+                logger.WriteLine($"Invalid ssdp message:\n{e.ToString()}");
+            }
+        }
+
+        private async void MulticastSsdpSocket_MessageReceived(DatagramSocket sender, DatagramSocketMessageReceivedEventArgs args)
+        {
+            string address = $"{args.RemoteAddress.CanonicalName}:{args.RemotePort}";
+            var reader = args.GetDataReader();
+            var data = reader.ReadString(reader.UnconsumedBufferLength);
+            logger.WriteLine($"MULTICAST ControlPoint [{address}]\n{data}");
+            try
+            {
+                var ssdpMessage = new SsdpMessage(data);
+                if (Target != "ssdp:all")
+                {
+                    if (ssdpMessage.NT != Target)
+                    {
+                        return;
+                    }
+                }
+
+                if (ssdpMessage.Type == SsdpMessageType.AdvertiseAlive)
+                {
+                    var device = Device.ConstructDevice(args.RemoteAddress, ssdpMessage);
+                    await RegisterDevice(device);
+                }
+                if (ssdpMessage.Type == SsdpMessageType.AdvertiseByeBye)
+                {
+                    var device = Device.ConstructDevice(args.RemoteAddress, ssdpMessage);
+                    await UnregisterDevice(device);
+                }
+            }
+            catch (InvalidMessageException e)
+            {
+                logger.WriteLine($"Invalid ssdp message:\n{e.ToString()}");
+            }
         }
     }
 }
