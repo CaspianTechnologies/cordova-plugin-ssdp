@@ -30,8 +30,10 @@ public class SsdpChannel implements Closeable, AutoCloseable {
         multicastSocket.send(new DatagramPacket(bytes, bytes.length, SSDP_MCAST_ADDRESS));
     }
 
-    public void sendUnicast(SsdpMessage message, SocketAddress address) throws IOException {
+    public void sendUnicast(SsdpMessage message, DatagramPacket packet) throws IOException {
         byte[] bytes = message.toBytes();
+        packet.setPort(SSPD_UCAST_PORT);
+        SocketAddress address = packet.getSocketAddress();
         unicastSocket.send(new DatagramPacket(bytes, bytes.length, address));
     }
 

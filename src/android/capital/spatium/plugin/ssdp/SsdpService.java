@@ -51,8 +51,8 @@ public class SsdpService implements Closeable, AutoCloseable {
         channel.sendMulticast(message);
     }
 
-    public void sendUnicast(SsdpMessage message, SocketAddress address) throws IOException {
-        channel.sendUnicast(message, address);
+    public void sendUnicast(SsdpMessage message, DatagramPacket packet) throws IOException {
+        channel.sendUnicast(message, packet);
     }
 
     private final class MulticastReceiver implements Runnable {

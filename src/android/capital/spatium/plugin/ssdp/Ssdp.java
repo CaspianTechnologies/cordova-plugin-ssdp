@@ -36,13 +36,25 @@ public class Ssdp extends CordovaPlugin {
     private Thread thread;
     private SsdpService ssdpService = null;
     private String target = DEFAULT_TARGET;
+    private int port = DEFAULT_PORT;
+    private String name = DEFAULT_NAME;
+    private String uuid = DEFAULT_UUID;
 
     private static final String TAG = "Cordova SSDP";
+
     private static final String DEFAULT_TARGET = "spatandroid";
+    private static final int DEFAULT_PORT = 5666;
+    private static final String DEFAULT_NAME = "Android/" + Build.VERSION.RELEASE;
+    private static final String DEFAULT_UUID = "uuid";
+
+    private static final String MAX_AGE = "max-age = 30";
+
     private static final String SSDP_ADDRESS = 
             SsdpChannel.SSDP_MCAST_ADDRESS.getAddress().getHostName() 
             + ":" 
             +  SsdpChannel.SSDP_MCAST_ADDRESS.getPort();
+
+    private static final int ALIVE_PERIOD = 10000;
 
     @Override
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
@@ -53,6 +65,28 @@ public class Ssdp extends CordovaPlugin {
     public boolean execute(String action, JSONArray args, final CallbackContext callbackContext) throws JSONException {
         Log.d(TAG, action);
         Log.d(TAG, args.toString());
+
+        if (args != null && args.length() > 0) {
+            String jsonTarget = args.optString(0);
+            if (jsonTarget != null && !jsonTarget.isEmpty()) {
+              target = jsonTarget;
+            }
+            
+            int jsonPort = args.optInt(1);
+            if (jsonPort > 0) {
+              port = jsonPort;
+            }
+            
+            String jsonName = args.optString(2);
+            if (jsonName != null && !jsonName.isEmpty()) {
+              name = jsonName;
+            }
+
+            String jsonUuid = args.optString(3);
+            if (jsonUuid != null && !jsonUuid.isEmpty()) {
+              uuid = jsonUuid;
+            }
+        }
 
         if (action.equals("startSearching")) {
             search(callbackContext);
@@ -66,12 +100,20 @@ public class Ssdp extends CordovaPlugin {
         } else if (action.equals("setDiscoveredCallback")) {
             return true;
         } else if (action.equals("setGoneCallback")) {
-          return true;
+            return true;
         }
         
         PluginResult result = new PluginResult(PluginResult.Status.INVALID_ACTION);
         callbackContext.sendPluginResult(result);
         return false;
+    }
+
+    @Override
+    public void onDestroy() {
+        if (thread != null) {
+          thread.interrupt();
+        }
+        super.onDestroy();
     }
 
     private void search(final CallbackContext callbackContext) {
@@ -124,7 +166,6 @@ public class Ssdp extends CordovaPlugin {
     class SearchThread extends Thread {
         @Override
         public void run() {
-            Log.d(TAG, "search thread started");
             try {
                 if (ssdpService != null) {
                     ssdpService.close();
@@ -143,17 +184,16 @@ public class Ssdp extends CordovaPlugin {
 
                 for (int i = 0; i < 3; i++) {
                     ssdpService.sendMulticast(searchMsg);
-                    Log.d(TAG, "send msearch");
-                    Thread.sleep(2000);
+                    Thread.sleep(1000);
                 }
 
                 while(!this.isInterrupted()) {}
-
-                ssdpService.close();
             } catch (IOException e) {
                 e.printStackTrace();
             } catch (InterruptedException e) {
                 e.printStackTrace();
+            } finally {
+                ssdpService.close();
             }
         }
     }
@@ -197,23 +237,39 @@ public class Ssdp extends CordovaPlugin {
 
                 SsdpMessage aliveMsg = new SsdpMessage(SsdpMessageType.NOTIFY);
                 aliveMsg.setHeader("HOST", SSDP_ADDRESS);
-                aliveMsg.setHeader("NTS", SsdpNotificationType.ALIVE.getRepresentation());
+                aliveMsg.setHeader("CACHE-CONTROL", MAX_AGE);
                 aliveMsg.setHeader("NT", target);
-                ssdpService.sendMulticast(aliveMsg);
+                aliveMsg.setHeader("NTS", SsdpNotificationType.ALIVE.getRepresentation());
+                aliveMsg.setHeader("SERVER", name);
+                aliveMsg.setHeader("USN", uuid);
+                aliveMsg.setHeader("PORT", String.valueOf(port));
 
-                while(!this.isInterrupted()) {}
-
-                SsdpMessage byebyeMsg = new SsdpMessage(SsdpMessageType.NOTIFY);
-                byebyeMsg.setHeader("HOST", SSDP_ADDRESS);
-                byebyeMsg.setHeader("NTS", SsdpNotificationType.BYEBYE.getRepresentation());
-                byebyeMsg.setHeader("NT", target);
-                ssdpService.sendMulticast(byebyeMsg);
-
-                ssdpService.close();
+                while(!this.isInterrupted()) {
+                    ssdpService.sendMulticast(aliveMsg);
+                    Thread.sleep(ALIVE_PERIOD);
+                }
             } catch (IOException e) {
                 e.printStackTrace();
+            } catch (InterruptedException e) {
+            } finally {
+                sendByeBye();
+                ssdpService.close();
             }
         }
+    }
+
+    private void sendByeBye() {
+      SsdpMessage byebyeMsg = new SsdpMessage(SsdpMessageType.NOTIFY);
+      byebyeMsg.setHeader("HOST", SSDP_ADDRESS);
+      byebyeMsg.setHeader("NTS", SsdpNotificationType.BYEBYE.getRepresentation());
+      byebyeMsg.setHeader("NT", target);
+      byebyeMsg.setHeader("SERVER", name);
+      byebyeMsg.setHeader("USN", uuid);
+      try {
+          ssdpService.sendMulticast(byebyeMsg);
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
     }
 
     private SsdpPacketListener advertisePacketListener = new SsdpPacketListener() {
@@ -243,13 +299,14 @@ public class Ssdp extends CordovaPlugin {
             }
 
             SsdpMessage searchMsg = new SsdpMessage(SsdpMessageType.RESPONSE);
-            searchMsg.setHeader("CACHE-CONTROL", "100");
-            searchMsg.setHeader("DATE", new Date().toString());
-            searchMsg.setHeader("SERVER", "Android/" + Build.VERSION.RELEASE);
+            searchMsg.setHeader("CACHE-CONTROL", MAX_AGE);
             searchMsg.setHeader("ST", target);
+            searchMsg.setHeader("SERVER", name);
+            searchMsg.setHeader("USN", uuid);
+            searchMsg.setHeader("PORT", String.valueOf(port));
 
             try {
-                ssdpService.sendUnicast(searchMsg, packet.getSocketAddress());
+                ssdpService.sendUnicast(searchMsg, packet);
             } catch (IOException e) {
                 e.printStackTrace();
             }
