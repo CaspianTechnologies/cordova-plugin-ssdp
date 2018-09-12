@@ -9,7 +9,7 @@ exports.startSearching = function(target) {
 
 exports.startAdvertising = function(target, port) {
   return new Promise(function(success, error) {
-    const name = device.name;
+    const name = device.model;
     const usn = device.uuid;
     exec(success, error, "SSDP", "startAdvertising", [target, port, name, usn]);
   });
