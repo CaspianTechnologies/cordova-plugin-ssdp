@@ -11,11 +11,17 @@ public class SsdpService implements Closeable, AutoCloseable {
     private final SsdpChannel channel;
     private final SsdpPacketListener listener;
     private final Thread multicastThread;
+    private final Thread unicastThread;
 
-    public SsdpService(NetworkInterface networkInterface, SsdpPacketListener listener) throws IOException, UnsupportedAddressTypeException {
+    public SsdpService(NetworkInterface networkInterface, SsdpPacketListener listener, boolean listenUnicast) throws IOException, UnsupportedAddressTypeException {
         this.listener = listener;
         this.channel = buildChannel(networkInterface);
         this.multicastThread = new Thread(new MulticastReceiver(), "SSDP_multicast_receiver");
+        if (listenUnicast) {
+            this.unicastThread = new Thread(new UnicastReceiver(), "SSDP_unicast_receiver");
+        } else {
+            this.unicastThread = null;
+        }
     }
 
     public SsdpChannel getChannel() {
@@ -27,12 +33,22 @@ public class SsdpService implements Closeable, AutoCloseable {
             throw new IllegalStateException("the ssdp multicast service is already running");
         }
         multicastThread.start();
+
+        if (unicastThread != null) {
+            if (unicastThread.isAlive() || unicastThread.isInterrupted()) {
+                throw new IllegalStateException("the ssdp unicast service is already running");
+            } 
+            unicastThread.start();
+        }
     }
 
     @Override
     public void close() {
         channel.close();
         multicastThread.interrupt();
+        if (unicastThread != null) {
+            unicastThread.interrupt();
+        }
     }
 
     private SsdpChannel buildChannel(NetworkInterface networkInterface) throws IOException {
@@ -76,4 +92,26 @@ public class SsdpService implements Closeable, AutoCloseable {
             }
         }
     }
+
+    private final class UnicastReceiver implements Runnable {
+      @Override
+      public void run() {
+          while (!unicastThread.isInterrupted()) {
+              if (channel == null) {
+                  return;
+              }
+
+              byte[] buf = new byte[256];
+              DatagramPacket msgPacket = new DatagramPacket(buf, buf.length);
+              try {
+                  channel.receiveUnicast(msgPacket);
+              } catch (IOException e) {}
+
+              String s = new String(msgPacket.getData());
+              if (listener != null) {
+                  listener.received(msgPacket);
+              }
+          }
+      }
+  }
 }
