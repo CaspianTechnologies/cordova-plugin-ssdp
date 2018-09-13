@@ -289,8 +289,10 @@ public class Ssdp extends CordovaPlugin {
                 return;
             }
 
-            final String addr = packet.getAddress().getHostAddress() + ":" + packet.getPort();
-            Log.d(TAG, addr);
+            if (packet.getAddress() != null) {
+                final String addr = packet.getAddress().getHostAddress() + ":" + packet.getPort();
+                Log.d(TAG, addr);
+            }
             Log.d(TAG, msgString);
             Log.d(TAG, "__________________");
 
