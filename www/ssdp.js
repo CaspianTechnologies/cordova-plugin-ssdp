@@ -22,9 +22,9 @@ exports.stop = function() {
 }
 
 exports.setDiscoveredCallback = function(callback) {
-  exec(callback, null, "SSDP", "setDiscoveredCallback", []);
+  exec(callback, null, "SSDP", "setDiscoveredCallback", [callback]);
 }
 
 exports.setGoneCallback = function(callback) {
-  exec(callback, null, "SSDP", "setGoneCallback", []);
+  exec(callback, null, "SSDP", "setGoneCallback", [callback]);
 }

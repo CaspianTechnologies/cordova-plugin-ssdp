@@ -13,20 +13,19 @@ module.exports = {
         controlPoint.target = target;
         controlPoint.start()
             .then(function () {
-                controlPoint.searchDevices().then(res => {
-                    console.log('proxy - searchDevices complete. Res:', res);
-                    success(res);
-                }, error);
+                controlPoint.searchDevices().then(success, error);
             }, error);
     },
 
-    setDiscoveredCallback: function (callback, _, params) {
+    setDiscoveredCallback: function (_1, _2, params) {
         initializeControlPoint();
+        const callback = params[0];
         controlPoint.addEventListener('devicediscovered', callback);
     },
 
-    setGoneCallback: function (callback, _, params) {
+    setGoneCallback: function (_1, _2, params) {
         initializeControlPoint();
+        const callback = params[0];
         controlPoint.addEventListener('devicegone', callback);
     },
 
