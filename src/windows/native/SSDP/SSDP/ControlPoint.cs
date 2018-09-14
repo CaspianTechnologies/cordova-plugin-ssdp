@@ -79,10 +79,18 @@ namespace SSDP
                 logger.WriteLine($"ControlPoint: listen :{port} for UNICAST requests.");
                 await unicastLocalSocket.BindServiceNameAsync(port);
 
+                NetworkInformation.NetworkStatusChanged += NetworkInformation_NetworkStatusChanged;
+
                 isStarted = true;
 
                 logger.WriteLine("ControlPoint started.");
             }).AsAsyncAction();
+        }
+
+        private void NetworkInformation_NetworkStatusChanged(object sender)
+        {
+            logger.WriteLine("Network status changed");
+            multicastSsdpSocket.JoinMulticastGroup(Constants.SSDP_HOST);
         }
 
         public void Stop()
