@@ -75,9 +75,8 @@ namespace SSDP
 
                 unicastLocalSocket = new DatagramSocket();
                 unicastLocalSocket.MessageReceived += UnicastLocalSocket_MessageReceived;
-                var port = "1901";
-                logger.WriteLine($"ControlPoint: listen :{port} for UNICAST requests.");
-                await unicastLocalSocket.BindServiceNameAsync(port);
+                await unicastLocalSocket.BindServiceNameAsync("");
+                logger.WriteLine($"ControlPoint: Bind to port :{unicastLocalSocket.Information.LocalPort} for UNICAST search responses.");
 
                 isStarted = true;
 
@@ -94,7 +93,6 @@ namespace SSDP
             logger.WriteLine("Stopping ControlPoint...");
 
             multicastSsdpSocket.Dispose();
-            //multicastSsdpSocket.MessageReceived -= UnicastLocalSocket_MessageReceived;
             unicastLocalSocket.Dispose();
 
             isStarted = false;
@@ -105,7 +103,7 @@ namespace SSDP
         private async Task<uint> SendSearchDevicesRequest(SsdpMessage request, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            var outputStream = await multicastSsdpSocket.GetOutputStreamAsync(Constants.SSDP_HOST, Constants.SSDP_PORT);
+            var outputStream = await unicastLocalSocket.GetOutputStreamAsync(Constants.SSDP_HOST, Constants.SSDP_PORT);
             var writer = new DataWriter(outputStream);
             writer.WriteString(request.ToString());
             return await writer.StoreAsync();
