@@ -196,7 +196,6 @@ public class Ssdp extends CordovaPlugin {
                 searchMsg.setHeader("MAN", "\"ssdp:discover\"");
                 searchMsg.setHeader("MX", "2");
                 searchMsg.setHeader("ST", target);
-                searchMsg.setHeader("USER-AGENT", target);
 
                 for (int i = 0; i < 3; i++) {
                     ssdpService.sendMulticast(searchMsg);
@@ -235,8 +234,11 @@ public class Ssdp extends CordovaPlugin {
                 return;
             }
 
-            final String addr = packet.getAddress().getHostAddress() + ":" + packet.getPort();
-            Log.d(TAG, addr);
+            Log.d(TAG, "__________________");
+            if (packet.getAddress().getHostAddress() != null) {
+                final String addr = packet.getAddress().getHostAddress() + ":" + packet.getPort();
+                Log.d(TAG, addr);
+            }
             Log.d(TAG, msgString);
             Log.d(TAG, "__________________");
 
@@ -338,6 +340,7 @@ public class Ssdp extends CordovaPlugin {
                 return;
             }
 
+            Log.d(TAG, "__________________");
             if (packet.getAddress() != null) {
                 final String addr = packet.getAddress().getHostAddress() + ":" + packet.getPort();
                 Log.d(TAG, addr);
@@ -346,9 +349,11 @@ public class Ssdp extends CordovaPlugin {
             Log.d(TAG, "__________________");
 
             if (!message.getType().equals(SsdpMessageType.MSEARCH)) {
+                Log.d(TAG, "not search");
                 return;
             }
 
+            Log.d(TAG, "search");
             SsdpMessage searchMsg = new SsdpMessage(SsdpMessageType.RESPONSE);
             searchMsg.setHeader("CACHE-CONTROL", MAX_AGE);
             searchMsg.setHeader("ST", target);
