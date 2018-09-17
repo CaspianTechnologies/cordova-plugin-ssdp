@@ -168,6 +168,7 @@ namespace Client
             socket.Control.MulticastOnly = true;
             await socket.BindServiceNameAsync(Constants.SSDP_PORT);
             socket.JoinMulticastGroup(Constants.SSDP_HOST);
+            NetworkInformation.NetworkStatusChanged += (s) => socket.JoinMulticastGroup(Constants.SSDP_HOST);
             logger.WriteLine($"Start listening multicast {Constants.SSDP_ADDRESS}");
         }
     }
