@@ -21,6 +21,12 @@ exports.stop = function() {
   });
 }
 
+exports.reset = function() {
+  return new Promise(function(success, error) {
+    exec(success, error, "SSDP", "reset", []);
+  });
+}
+
 exports.setDiscoveredCallback = function(callback) {
   exec(callback, null, "SSDP", "setDiscoveredCallback", [callback]);
 }

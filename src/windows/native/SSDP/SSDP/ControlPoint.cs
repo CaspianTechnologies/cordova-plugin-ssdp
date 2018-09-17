@@ -56,6 +56,11 @@ namespace SSDP
             }, token).AsAsyncOperation();
         }
 
+        public void Reset()
+        {
+            devices.Clear();
+        }
+
         public IAsyncAction Start()
         {
             return Task.Run(async () =>

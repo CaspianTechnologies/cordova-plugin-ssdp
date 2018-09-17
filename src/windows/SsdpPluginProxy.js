@@ -36,6 +36,15 @@ module.exports = {
         } catch (e) {
             error(e);
         }
+    },
+
+    reset: function (success, error, params) {
+        try {
+            if (controlPoint) controlPoint.reset();
+            success();
+        } catch (e) {
+            error(e);
+        }
     }
 };
 
