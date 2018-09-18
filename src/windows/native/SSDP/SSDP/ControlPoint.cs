@@ -113,6 +113,8 @@ namespace SSDP
             multicastSsdpSocket.Dispose();
             unicastLocalSocket.Dispose();
 
+            NetworkInformation.NetworkStatusChanged -= NetworkInformation_NetworkStatusChanged;
+
             isStarted = false;
 
             logger.WriteLine("ControlPoint stopped.");
