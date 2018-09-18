@@ -23,6 +23,7 @@ namespace SSDP
         private ILogger logger;
         private bool isStarted = false;
         private readonly CoreDispatcher dispatcher;
+        private Timer expiryTimer;
 
         private IList<Device> devices = new List<Device>();
 
@@ -72,8 +73,6 @@ namespace SSDP
                     return;
                 }
 
-                //var profiles = NetworkInformation.GetConnectionProfiles();
-
                 multicastSsdpSocket = new DatagramSocket();
                 multicastSsdpSocket.MessageReceived += MulticastSsdpSocket_MessageReceived;
                 multicastSsdpSocket.Control.MulticastOnly = true;
@@ -87,6 +86,8 @@ namespace SSDP
                 await unicastLocalSocket.BindServiceNameAsync(port);
 
                 NetworkInformation.NetworkStatusChanged += NetworkInformation_NetworkStatusChanged;
+
+                expiryTimer = new Timer(CheckDeviceExpiration, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
 
                 isStarted = true;
 
@@ -109,6 +110,8 @@ namespace SSDP
                 return;
             }
             logger.WriteLine("Stopping ControlPoint...");
+
+            expiryTimer.Dispose();
 
             multicastSsdpSocket.Dispose();
             unicastLocalSocket.Dispose();
@@ -133,6 +136,9 @@ namespace SSDP
         {
             if (devices.Contains(device))
             {
+                var registeredDevice = devices.Single(d => d.Equals(device));
+                registeredDevice.Date = DateTimeOffset.UtcNow;
+                registeredDevice.CacheControl = device.CacheControl;
                 return false;
             }
 
@@ -228,7 +234,6 @@ namespace SSDP
             string address = $"{args.RemoteAddress.CanonicalName}:{args.RemotePort}";
             var reader = args.GetDataReader();
             var data = reader.ReadString(reader.UnconsumedBufferLength);
-            logger.WriteLine($"MULTICAST ControlPoint [{address}]\n{data}");
             try
             {
                 var ssdpMessage = new SsdpMessage(data);
@@ -254,6 +259,24 @@ namespace SSDP
             catch (InvalidMessageException e)
             {
                 logger.WriteLine($"Invalid ssdp message:\n{e.ToString()}");
+            }
+        }
+
+        private async void CheckDeviceExpiration(object state)
+        {
+            var devicesToRemove = new List<Device>();
+
+            foreach (Device device in devices)
+            {
+                if (device.IsExpired)
+                {
+                    devicesToRemove.Add(device);
+                }
+            }
+
+            foreach (var device in devicesToRemove)
+            {
+                await UnregisterDevice(device);
             }
         }
     }

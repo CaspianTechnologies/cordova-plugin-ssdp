@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using Windows.Networking;
 
 namespace SSDP
@@ -16,9 +17,17 @@ namespace SSDP
         {
             get
             {
+                Match match = maxAgePattern.Match(CacheControl);
+                if (int.TryParse(match.Groups[1].Value, out int seconds))
+                {
+                    var cacheTime = TimeSpan.FromSeconds(seconds);
+                    return (Date + cacheTime) < DateTimeOffset.UtcNow;
+                }
                 return false;
             }
         }
+
+        private Regex maxAgePattern = new Regex(@"max-age\s*=\s*(\d+)");
 
         public override bool Equals(object obj)
         {
