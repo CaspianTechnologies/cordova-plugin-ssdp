@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Windows.Foundation;
 using Windows.Networking;
+using Windows.Networking.Connectivity;
 using Windows.Networking.Sockets;
 using Windows.Storage.Streams;
 
@@ -118,6 +119,12 @@ namespace SSDP
             await RespondToSearch(args.RemoteAddress, args.RemotePort);
         }
 
+        private void NetworkInformation_NetworkStatusChanged(object sender)
+        {
+            logger.WriteLine("Network status changed");
+            multicastSsdpSocket.JoinMulticastGroup(Constants.SSDP_HOST);
+        }
+
         public IAsyncAction Start()
         {
             return Task.Run(async () =>
@@ -132,6 +139,8 @@ namespace SSDP
                 multicastSsdpSocket.Control.MulticastOnly = true;
                 await multicastSsdpSocket.BindServiceNameAsync(Constants.SSDP_PORT);
                 multicastSsdpSocket.JoinMulticastGroup(Constants.SSDP_HOST);
+
+                NetworkInformation.NetworkStatusChanged += NetworkInformation_NetworkStatusChanged;
 
                 isStarted = true;
 
