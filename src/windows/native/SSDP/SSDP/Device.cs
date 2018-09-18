@@ -10,6 +10,7 @@ namespace SSDP
         public int Port { get; set; }
         public string Name { get; set; }
         public string USN { get; set; }
+        public string MacAddress { get; set; }
         public DateTimeOffset Date { get; set; }
         public string CacheControl { get; set; }
         public bool IsExpired
@@ -30,8 +31,7 @@ namespace SSDP
         private bool Equals(Device other)
         {
             if (other == null) return false;
-            return USN == other.USN 
-                && IP == other.IP;
+            return USN == other.USN;
         }
 
         public static Device ConstructDevice(HostName ip, SsdpMessage message)
@@ -46,6 +46,7 @@ namespace SSDP
                 IP = ip.CanonicalName,
                 Port = port,
                 USN = message.USN ?? "UnknownUSN",
+                MacAddress = message.AdditionalHeaders.GetValueOrDefault("MAC"),
                 Name = message.Server ?? "NoName",
                 Date = message.Date,
                 CacheControl = message.CacheControl,
@@ -55,10 +56,7 @@ namespace SSDP
 
         public override int GetHashCode()
         {
-            var hashCode = -195774287;
-            hashCode = hashCode * -1521134295 + EqualityComparer<string>.Default.GetHashCode(IP);
-            hashCode = hashCode * -1521134295 + EqualityComparer<string>.Default.GetHashCode(USN);
-            return hashCode;
+            return 1515427197 + EqualityComparer<string>.Default.GetHashCode(USN);
         }
 
         public override string ToString()
