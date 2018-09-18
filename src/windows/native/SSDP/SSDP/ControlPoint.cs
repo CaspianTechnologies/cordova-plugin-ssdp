@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Windows.Foundation;
@@ -92,10 +94,12 @@ namespace SSDP
             }).AsAsyncAction();
         }
 
-        private void NetworkInformation_NetworkStatusChanged(object sender)
+        private async void NetworkInformation_NetworkStatusChanged(object sender)
         {
             logger.WriteLine("Network status changed");
+            await UnregisterDevicesFromMissingNetworks();
             multicastSsdpSocket.JoinMulticastGroup(Constants.SSDP_HOST);
+            await SearchDevices();
         }
 
         public void Stop()
@@ -107,7 +111,6 @@ namespace SSDP
             logger.WriteLine("Stopping ControlPoint...");
 
             multicastSsdpSocket.Dispose();
-            //multicastSsdpSocket.MessageReceived -= UnicastLocalSocket_MessageReceived;
             unicastLocalSocket.Dispose();
 
             isStarted = false;
@@ -162,6 +165,44 @@ namespace SSDP
             return true;
         }
 
+        private async Task UnregisterDevicesFromMissingNetworks()
+        {
+            IEnumerable<NetworkAdapterInfo> networks = NetworkInformation.GetHostNames()
+                .Where(hostName => hostName.IPInformation != null)
+                .Select(hostName => new NetworkAdapterInfo
+                {
+                    NetworkAdapter = hostName.IPInformation.NetworkAdapter,
+                    IPAddress = IPAddress.Parse(hostName.CanonicalName),
+                    SubnetMask = SubnetMask.CreateByNetBitLength((int)hostName.IPInformation.PrefixLength)
+                })
+                .ToList();
+
+            var devicesToRemove = new List<Device>();
+            foreach (var device in devices)
+            {
+                var deviceIP = IPAddress.Parse(device.IP);
+                var deviceFound = false;
+                foreach (var network in networks)
+                {
+                    if (deviceIP.IsInSameSubnet(network.IPAddress, network.SubnetMask))
+                    {
+                        deviceFound = true;
+                        break;
+                    }
+                }
+
+                if (!deviceFound)
+                {
+                    devicesToRemove.Add(device);
+                }
+            }
+
+            foreach (var device in devicesToRemove)
+            {
+                await UnregisterDevice(device);
+            }
+        }
+        
         private async void UnicastLocalSocket_MessageReceived(DatagramSocket sender, DatagramSocketMessageReceivedEventArgs args)
         {
             string address = $"{args.RemoteAddress.CanonicalName}:{args.RemotePort}";

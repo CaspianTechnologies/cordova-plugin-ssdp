@@ -111,6 +111,8 @@
     <Compile Include="DictionaryExtensions.cs" />
     <Compile Include="EventTimer.cs" />
     <Compile Include="InvalidMessageException.cs" />
+    <Compile Include="IPAddressExtensions.cs" />
+    <Compile Include="NetworkAdapterInfo.cs" />
     <Compile Include="SsdpMessageType.cs" />
     <Compile Include="Constants.cs" />
     <Compile Include="ControlPoint.cs" />
@@ -118,6 +120,7 @@
     <Compile Include="RootDevice.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SsdpMessage.cs" />
+    <Compile Include="SubnetMask.cs" />
     <Compile Include="SystemLogger.cs" />
   </ItemGroup>
   <ItemGroup>
