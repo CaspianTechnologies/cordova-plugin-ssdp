@@ -5,30 +5,27 @@ import android.content.Context;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
-import android.os.Bundle;
 import android.util.Log;
+
+import org.apache.cordova.CallbackContext;
+import org.apache.cordova.CordovaInterface;
+import org.apache.cordova.CordovaPlugin;
+import org.apache.cordova.CordovaWebView;
+import org.apache.cordova.PluginResult;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.IOException;
+import java.net.DatagramPacket;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
 
 import capital.spatium.plugin.ssdp.SsdpChannel;
 import capital.spatium.plugin.ssdp.SsdpMessage;
 import capital.spatium.plugin.ssdp.SsdpMessageType;
 import capital.spatium.plugin.ssdp.SsdpPacketListener;
 import capital.spatium.plugin.ssdp.SsdpService;
-
-import java.io.IOException;
-import java.net.DatagramPacket;
-import java.net.InetAddress;
-import java.net.NetworkInterface;
-import java.util.Date;
-
-import org.apache.cordova.CordovaPlugin;
-import org.apache.cordova.PluginResult;
-import org.apache.cordova.CallbackContext;
-import org.apache.cordova.CordovaInterface;
-import org.apache.cordova.CordovaWebView;
-
-import org.json.JSONArray;
-import org.json.JSONObject;
-import org.json.JSONException;
 
 
 public class Ssdp extends CordovaPlugin {
@@ -43,6 +40,8 @@ public class Ssdp extends CordovaPlugin {
 
     private CallbackContext discoveredCallback = null;
     private CallbackContext goneCallback = null;
+    private CallbackContext mSearchCallback = null;
+    private CallbackContext mAdvertiseCallback = null;
 
     private static final String DEFAULT_TARGET = "spatium";
     private static final String DEFAULT_NAME = "Android/" + Build.VERSION.RELEASE;
@@ -51,10 +50,10 @@ public class Ssdp extends CordovaPlugin {
 
     private static final String MAX_AGE = "max-age = 30";
 
-    private static final String SSDP_ADDRESS = 
-            SsdpChannel.SSDP_MCAST_ADDRESS.getAddress().getHostName() 
-            + ":" 
-            +  SsdpChannel.SSDP_MCAST_ADDRESS.getPort();
+    private static final String SSDP_ADDRESS =
+            SsdpChannel.SSDP_MCAST_ADDRESS.getAddress().getHostName()
+                    + ":"
+                    + SsdpChannel.SSDP_MCAST_ADDRESS.getPort();
 
     private static final int ALIVE_PERIOD = 10000;
     private static final int MSEARCH_PERIOD = 1000;
@@ -74,29 +73,31 @@ public class Ssdp extends CordovaPlugin {
         if (args != null && args.length() > 0) {
             String jsonTarget = args.optString(0);
             if (jsonTarget != null && !jsonTarget.isEmpty()) {
-              target = jsonTarget;
+                target = jsonTarget;
             }
-            
+
             int jsonPort = args.optInt(1);
             if (jsonPort > 0) {
-              port = jsonPort;
+                port = jsonPort;
             }
-            
+
             String jsonName = args.optString(2);
             if (jsonName != null && !jsonName.isEmpty()) {
-              name = jsonName;
+                name = jsonName;
             }
 
             String jsonUuid = args.optString(3);
             if (jsonUuid != null && !jsonUuid.isEmpty()) {
-              uuid = jsonUuid;
+                uuid = jsonUuid;
             }
         }
 
         if (action.equals("startSearching")) {
+            setSearchCallback(callbackContext);
             search(callbackContext);
             return true;
         } else if (action.equals("startAdvertising")) {
+            setAdvertiseCallback(callbackContext);
             advertise(callbackContext);
             return true;
         } else if (action.equals("stop")) {
@@ -109,7 +110,7 @@ public class Ssdp extends CordovaPlugin {
             setGoneCallback(callbackContext);
             return true;
         }
-        
+
         PluginResult result = new PluginResult(PluginResult.Status.INVALID_ACTION);
         callbackContext.sendPluginResult(result);
         return false;
@@ -118,16 +119,17 @@ public class Ssdp extends CordovaPlugin {
     @Override
     public void onDestroy() {
         if (thread != null) {
-          thread.interrupt();
+            thread.interrupt();
         }
         super.onDestroy();
     }
 
     private void search(final CallbackContext callbackContext) {
-      thread = new SearchThread();
-      thread.start();
-      PluginResult result = new PluginResult(PluginResult.Status.OK);
-      callbackContext.sendPluginResult(result);
+        thread = new SearchThread();
+        thread.start();
+        PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
+        result.setKeepCallback(true);
+        mSearchCallback.sendPluginResult(result);
     }
 
     private void stop(final CallbackContext callbackContext) {
@@ -139,8 +141,17 @@ public class Ssdp extends CordovaPlugin {
     private void advertise(final CallbackContext callbackContext) {
         thread = new AdvertiseThread();
         thread.start();
-        PluginResult result = new PluginResult(PluginResult.Status.OK);
-        callbackContext.sendPluginResult(result);
+        PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
+        result.setKeepCallback(true);
+        mAdvertiseCallback.sendPluginResult(result);
+    }
+
+    private void setSearchCallback(CallbackContext callbackContext) {
+        mSearchCallback = callbackContext;
+    }
+
+    private void setAdvertiseCallback(CallbackContext callbackContext) {
+        mAdvertiseCallback = callbackContext;
     }
 
     private void setDiscoveredCallback(final CallbackContext callbackContext) {
@@ -152,21 +163,21 @@ public class Ssdp extends CordovaPlugin {
     }
 
     private static byte[] convertIpAddress(int ip) {
-      return new byte[] {
-              (byte) (ip & 0xFF),
-              (byte) ((ip >> 8) & 0xFF),
-              (byte) ((ip >> 16) & 0xFF),
-              (byte) ((ip >> 24) & 0xFF)};
+        return new byte[]{
+                (byte) (ip & 0xFF),
+                (byte) ((ip >> 8) & 0xFF),
+                (byte) ((ip >> 16) & 0xFF),
+                (byte) ((ip >> 24) & 0xFF)};
     }
 
     private boolean containsTarget(SsdpMessage message) {
-      if (message.getHeader("ST") != null && message.getHeader("ST").equals(target)) {
-        return true;
-      }
-      if (message.getHeader("NT") != null && message.getHeader("NT").equals(target)) {
-        return true;
-      }
-      return false;
+        if (message.getHeader("ST") != null && message.getHeader("ST").equals(target)) {
+            return true;
+        }
+        if (message.getHeader("NT") != null && message.getHeader("NT").equals(target)) {
+            return true;
+        }
+        return false;
     }
 
     private NetworkInterface getWifiNetworkInterface() throws IOException {
@@ -202,13 +213,22 @@ public class Ssdp extends CordovaPlugin {
                     Thread.sleep(MSEARCH_PERIOD);
                 }
 
-                while(!this.isInterrupted()) {}
+                while (!this.isInterrupted()) {
+                }
             } catch (IOException e) {
                 e.printStackTrace();
+                PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                result.setKeepCallback(true);
+                mSearchCallback.sendPluginResult(result);
             } catch (InterruptedException e) {
                 e.printStackTrace();
+                PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                result.setKeepCallback(true);
+                mSearchCallback.sendPluginResult(result);
             } finally {
-                ssdpService.close();
+                if (ssdpService != null) {
+                    ssdpService.close();
+                }
             }
         }
     }
@@ -224,7 +244,12 @@ public class Ssdp extends CordovaPlugin {
             SsdpMessage message = null;
             try {
                 message = SsdpMessage.toMessage(msgString);
-            } catch (IllegalArgumentException e) {}
+            } catch (IllegalArgumentException e) {
+                e.printStackTrace();
+                PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                result.setKeepCallback(true);
+                mSearchCallback.sendPluginResult(result);
+            }
 
             if (message == null || !containsTarget(message)) {
                 return;
@@ -248,8 +273,11 @@ public class Ssdp extends CordovaPlugin {
                 item.put("port", message.getHeader("PORT"));
                 item.put("name", message.getHeader("SERVER"));
                 item.put("usn", message.getHeader("USN"));
-            } catch(JSONException e) {
+            } catch (JSONException e) {
                 e.printStackTrace();
+                PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                result.setKeepCallback(true);
+                mSearchCallback.sendPluginResult(result);
             }
 
             PluginResult result = new PluginResult(PluginResult.Status.OK, item);
@@ -295,32 +323,44 @@ public class Ssdp extends CordovaPlugin {
                 aliveMsg.setHeader("USN", uuid);
                 aliveMsg.setHeader("PORT", String.valueOf(port));
 
-                while(!this.isInterrupted()) {
+                while (!this.isInterrupted()) {
                     ssdpService.sendMulticast(aliveMsg);
                     Thread.sleep(ALIVE_PERIOD);
                 }
             } catch (IOException e) {
                 e.printStackTrace();
+                PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                result.setKeepCallback(true);
+                mAdvertiseCallback.sendPluginResult(result);
             } catch (InterruptedException e) {
+                e.printStackTrace();
+                PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                result.setKeepCallback(true);
+                mAdvertiseCallback.sendPluginResult(result);
             } finally {
-                sendByeBye();
-                ssdpService.close();
+                if (ssdpService != null) {
+                    sendByeBye();
+                    ssdpService.close();
+                }
             }
         }
     }
 
     private void sendByeBye() {
-      SsdpMessage byebyeMsg = new SsdpMessage(SsdpMessageType.NOTIFY);
-      byebyeMsg.setHeader("HOST", SSDP_ADDRESS);
-      byebyeMsg.setHeader("NTS", SsdpNotificationType.BYEBYE.getRepresentation());
-      byebyeMsg.setHeader("NT", target);
-      byebyeMsg.setHeader("SERVER", name);
-      byebyeMsg.setHeader("USN", uuid);
-      try {
-          ssdpService.sendMulticast(byebyeMsg);
-      } catch (IOException e) {
-        e.printStackTrace();
-      }
+        SsdpMessage byebyeMsg = new SsdpMessage(SsdpMessageType.NOTIFY);
+        byebyeMsg.setHeader("HOST", SSDP_ADDRESS);
+        byebyeMsg.setHeader("NTS", SsdpNotificationType.BYEBYE.getRepresentation());
+        byebyeMsg.setHeader("NT", target);
+        byebyeMsg.setHeader("SERVER", name);
+        byebyeMsg.setHeader("USN", uuid);
+        try {
+            ssdpService.sendMulticast(byebyeMsg);
+        } catch (IOException e) {
+            e.printStackTrace();
+            PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+            result.setKeepCallback(true);
+            mAdvertiseCallback.sendPluginResult(result);
+        }
     }
 
     private SsdpPacketListener advertisePacketListener = new SsdpPacketListener() {
@@ -334,7 +374,12 @@ public class Ssdp extends CordovaPlugin {
             SsdpMessage message = null;
             try {
                 message = SsdpMessage.toMessage(msgString);
-            } catch (IllegalArgumentException e) {}
+            } catch (IllegalArgumentException e) {
+                e.printStackTrace();
+                PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                result.setKeepCallback(true);
+                mAdvertiseCallback.sendPluginResult(result);
+            }
 
             if (message == null || !containsTarget(message)) {
                 return;
@@ -360,11 +405,15 @@ public class Ssdp extends CordovaPlugin {
             searchMsg.setHeader("SERVER", name);
             searchMsg.setHeader("USN", uuid);
             searchMsg.setHeader("PORT", String.valueOf(port));
+            Log.d(TAG, searchMsg.toString());
 
             try {
                 ssdpService.sendUnicast(searchMsg, packet);
             } catch (IOException e) {
                 e.printStackTrace();
+                PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                result.setKeepCallback(true);
+                mAdvertiseCallback.sendPluginResult(result);
             }
 
         }
