@@ -7,6 +7,7 @@ import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.net.MulticastSocket;
 import java.net.NetworkInterface;
+import java.net.ServerSocket;
 import java.net.SocketAddress;
 import java.net.SocketException;
 import java.nio.channels.UnsupportedAddressTypeException;
@@ -15,7 +16,7 @@ public class SsdpChannel implements Closeable, AutoCloseable {
     public static final InetSocketAddress SSDP_MCAST_ADDRESS = new InetSocketAddress(
             "239.255.255.250",
             1900);
-    private static final int SSPD_UCAST_PORT = 1901;
+    private int SSPD_UCAST_PORT = 0;
 
     private final DatagramSocket unicastSocket;
     private final MulticastSocket multicastSocket;
@@ -32,7 +33,6 @@ public class SsdpChannel implements Closeable, AutoCloseable {
 
     public void sendUnicast(SsdpMessage message, DatagramPacket packet) throws IOException {
         byte[] bytes = message.toBytes();
-        packet.setPort(SSPD_UCAST_PORT);
         SocketAddress address = packet.getSocketAddress();
         unicastSocket.send(new DatagramPacket(bytes, bytes.length, address));
     }
@@ -60,9 +60,17 @@ public class SsdpChannel implements Closeable, AutoCloseable {
         }
     }
 
-    private DatagramSocket createUnicastSocket() throws SocketException {
-        DatagramSocket socket = new DatagramSocket(SSPD_UCAST_PORT);
-        return socket;
+    private DatagramSocket createUnicastSocket() {
+        try {
+            ServerSocket s = new ServerSocket(0);
+            SSPD_UCAST_PORT = s.getLocalPort();
+            s.close();
+            DatagramSocket socket = new DatagramSocket(SSPD_UCAST_PORT);
+            return socket;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
     }
 
     private MulticastSocket createMulticastSocket(NetworkInterface networkIf)

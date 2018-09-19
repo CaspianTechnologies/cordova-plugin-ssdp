@@ -385,20 +385,19 @@ public class Ssdp extends CordovaPlugin {
                 return;
             }
 
-            Log.d(TAG, "__________________");
+            Log.d(TAG, "message __________________");
             if (packet.getAddress() != null) {
                 final String addr = packet.getAddress().getHostAddress() + ":" + packet.getPort();
                 Log.d(TAG, addr);
             }
             Log.d(TAG, msgString);
-            Log.d(TAG, "__________________");
 
             if (!message.getType().equals(SsdpMessageType.MSEARCH)) {
-                Log.d(TAG, "not search");
+                Log.d(TAG, "__________________");
                 return;
             }
 
-            Log.d(TAG, "search");
+            Log.d(TAG, "search response __________________");
             SsdpMessage searchMsg = new SsdpMessage(SsdpMessageType.RESPONSE);
             searchMsg.setHeader("CACHE-CONTROL", MAX_AGE);
             searchMsg.setHeader("ST", target);
@@ -406,6 +405,7 @@ public class Ssdp extends CordovaPlugin {
             searchMsg.setHeader("USN", uuid);
             searchMsg.setHeader("PORT", String.valueOf(port));
             Log.d(TAG, searchMsg.toString());
+            Log.d(TAG, "__________________");
 
             try {
                 ssdpService.sendUnicast(searchMsg, packet);
