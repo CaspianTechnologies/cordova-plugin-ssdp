@@ -23,9 +23,6 @@ namespace SSDP
         private ILogger logger;
         private bool isStarted = false;
         private readonly CoreDispatcher dispatcher;
-        private Timer expiryTimer;
-
-        private IList<Device> devices = new List<Device>();
 
         public ControlPoint() : this(new SystemLogger()) { }
 
@@ -59,11 +56,6 @@ namespace SSDP
             }, token).AsAsyncOperation();
         }
 
-        public void Reset()
-        {
-            devices.Clear();
-        }
-
         public IAsyncAction Start()
         {
             return Task.Run(async () =>
@@ -86,8 +78,6 @@ namespace SSDP
 
                 NetworkInformation.NetworkStatusChanged += NetworkInformation_NetworkStatusChanged;
 
-                expiryTimer = new Timer(CheckDeviceExpiration, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
-
                 isStarted = true;
 
                 logger.WriteLine("ControlPoint started.");
@@ -97,7 +87,6 @@ namespace SSDP
         private async void NetworkInformation_NetworkStatusChanged(object sender)
         {
             logger.WriteLine("Network status changed");
-            await UnregisterDevicesFromMissingNetworks();
             multicastSsdpSocket.JoinMulticastGroup(Constants.SSDP_HOST);
             await SearchDevices();
         }
@@ -109,8 +98,6 @@ namespace SSDP
                 return;
             }
             logger.WriteLine("Stopping ControlPoint...");
-
-            expiryTimer.Dispose();
 
             multicastSsdpSocket.Dispose();
             unicastLocalSocket.Dispose();
@@ -131,16 +118,8 @@ namespace SSDP
             return await writer.StoreAsync();
         }
 
-        private async Task<bool> RegisterDevice(Device device)
+        private async Task RegisterDevice(Device device)
         {
-            if (devices.Contains(device))
-            {
-                var registeredDevice = devices.Single(d => d.Equals(device));
-                registeredDevice.Date = DateTimeOffset.UtcNow;
-                registeredDevice.CacheControl = device.CacheControl;
-                return false;
-            }
-
             if (DeviceDiscovered != null)
             {
                 await dispatcher.RunAsync(CoreDispatcherPriority.Normal,
@@ -149,17 +128,10 @@ namespace SSDP
                         DeviceDiscovered?.Invoke(this, device);
                     }));
             }
-            devices.Add(device);
-            return true;
         }
 
-        private async Task<bool> UnregisterDevice(Device device)
+        private async Task UnregisterDevice(Device device)
         {
-            if (!devices.Contains(device))
-            {
-                return false;
-            }
-
             if (DeviceGone != null)
             {
                 await dispatcher.RunAsync(CoreDispatcherPriority.Normal,
@@ -167,46 +139,6 @@ namespace SSDP
                     {
                         DeviceGone?.Invoke(this, device);
                     }));
-            }
-            devices.Remove(device);
-            return true;
-        }
-
-        private async Task UnregisterDevicesFromMissingNetworks()
-        {
-            IEnumerable<NetworkAdapterInfo> networks = NetworkInformation.GetHostNames()
-                .Where(hostName => hostName.IPInformation != null)
-                .Select(hostName => new NetworkAdapterInfo
-                {
-                    NetworkAdapter = hostName.IPInformation.NetworkAdapter,
-                    IPAddress = IPAddress.Parse(hostName.CanonicalName),
-                    SubnetMask = SubnetMask.CreateByNetBitLength((int)hostName.IPInformation.PrefixLength)
-                })
-                .ToList();
-
-            var devicesToRemove = new List<Device>();
-            foreach (var device in devices)
-            {
-                var deviceIP = IPAddress.Parse(device.IP);
-                var deviceFound = false;
-                foreach (var network in networks)
-                {
-                    if (deviceIP.IsInSameSubnet(network.IPAddress, network.SubnetMask))
-                    {
-                        deviceFound = true;
-                        break;
-                    }
-                }
-
-                if (!deviceFound)
-                {
-                    devicesToRemove.Add(device);
-                }
-            }
-
-            foreach (var device in devicesToRemove)
-            {
-                await UnregisterDevice(device);
             }
         }
         
@@ -258,24 +190,6 @@ namespace SSDP
             catch (InvalidMessageException e)
             {
                 logger.WriteLine($"Invalid ssdp message:\n{e.ToString()}");
-            }
-        }
-
-        private async void CheckDeviceExpiration(object state)
-        {
-            var devicesToRemove = new List<Device>();
-
-            foreach (Device device in devices)
-            {
-                if (device.IsExpired)
-                {
-                    devicesToRemove.Add(device);
-                }
-            }
-
-            foreach (var device in devicesToRemove)
-            {
-                await UnregisterDevice(device);
             }
         }
     }
