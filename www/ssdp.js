@@ -9,10 +9,8 @@ const maxAgePattern = new RegExp(/max-age\s*=\s*(\d+)/);
 let cacheTimer = null;
 
 function registerDevice(device) {
-  console.log('registerDevice:', device);
   if (devices.has(device.usn)) {
     const registeredDevice = devices.get(device.usn);
-    console.log('registerDevice - deviceExists:', registeredDevice);
     registeredDevice.cacheControl = device.cacheControl;
     registeredDevice.date = new Date();
     return;
@@ -21,7 +19,6 @@ function registerDevice(device) {
   device.date = new Date();
   devices.set(device.usn, device);
 
-  console.log('registerDevice - added device to map:', devices);
   if (deviceDiscoveredClientCallback) {
     deviceDiscoveredClientCallback({
       ip: device.ip,
@@ -33,15 +30,12 @@ function registerDevice(device) {
 }
 
 function unregisterDevice(device) {
-  console.log('unregisterDevice:', device);
   const registeredDevice = devices.get(device.usn);
   if (!registeredDevice) {
-    console.log('unregisterDevice - device not exists:', device);
     return;
   }
 
   devices.delete(registeredDevice.usn)
-  console.log('unregisterDevice - device deleted:', registeredDevice);
   
   if (deviceGoneClientCallback) {
     deviceGoneClientCallback(registeredDevice);
@@ -69,7 +63,6 @@ exports.startSearching = function(target) {
           const isDeviceExpired = dateWithCache < now;
 
           if (isDeviceExpired) {
-            console.log('cache - delete device:', device);
             devices.delete(usn);
           }
         }
