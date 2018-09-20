@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using Windows.Networking;
 
 namespace SSDP
@@ -16,9 +17,17 @@ namespace SSDP
         {
             get
             {
+                Match match = maxAgePattern.Match(CacheControl);
+                if (int.TryParse(match.Groups[1].Value, out int seconds))
+                {
+                    var cacheTime = TimeSpan.FromSeconds(seconds);
+                    return (Date + cacheTime) < DateTimeOffset.UtcNow;
+                }
                 return false;
             }
         }
+
+        private Regex maxAgePattern = new Regex(@"max-age\s*=\s*(\d+)");
 
         public override bool Equals(object obj)
         {
@@ -30,8 +39,7 @@ namespace SSDP
         private bool Equals(Device other)
         {
             if (other == null) return false;
-            return USN == other.USN 
-                && IP == other.IP;
+            return USN == other.USN;
         }
 
         public static Device ConstructDevice(HostName ip, SsdpMessage message)
@@ -55,10 +63,7 @@ namespace SSDP
 
         public override int GetHashCode()
         {
-            var hashCode = -195774287;
-            hashCode = hashCode * -1521134295 + EqualityComparer<string>.Default.GetHashCode(IP);
-            hashCode = hashCode * -1521134295 + EqualityComparer<string>.Default.GetHashCode(USN);
-            return hashCode;
+            return 1515427197 + EqualityComparer<string>.Default.GetHashCode(USN);
         }
 
         public override string ToString()

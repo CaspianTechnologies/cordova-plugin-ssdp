@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Windows.Foundation;
@@ -21,8 +23,6 @@ namespace SSDP
         private ILogger logger;
         private bool isStarted = false;
         private readonly CoreDispatcher dispatcher;
-
-        private IList<Device> devices = new List<Device>();
 
         public ControlPoint() : this(new SystemLogger()) { }
 
@@ -56,11 +56,6 @@ namespace SSDP
             }, token).AsAsyncOperation();
         }
 
-        public void Reset()
-        {
-            devices.Clear();
-        }
-
         public IAsyncAction Start()
         {
             return Task.Run(async () =>
@@ -70,8 +65,6 @@ namespace SSDP
                     return;
                 }
 
-                //var profiles = NetworkInformation.GetConnectionProfiles();
-
                 multicastSsdpSocket = new DatagramSocket();
                 multicastSsdpSocket.MessageReceived += MulticastSsdpSocket_MessageReceived;
                 multicastSsdpSocket.Control.MulticastOnly = true;
@@ -80,9 +73,8 @@ namespace SSDP
 
                 unicastLocalSocket = new DatagramSocket();
                 unicastLocalSocket.MessageReceived += UnicastLocalSocket_MessageReceived;
-                var port = "1901";
-                logger.WriteLine($"ControlPoint: listen :{port} for UNICAST requests.");
-                await unicastLocalSocket.BindServiceNameAsync(port);
+                await unicastLocalSocket.BindServiceNameAsync("");
+                logger.WriteLine($"ControlPoint: Bind to port :{unicastLocalSocket.Information.LocalPort} for UNICAST search responses.");
 
                 NetworkInformation.NetworkStatusChanged += NetworkInformation_NetworkStatusChanged;
 
@@ -92,10 +84,11 @@ namespace SSDP
             }).AsAsyncAction();
         }
 
-        private void NetworkInformation_NetworkStatusChanged(object sender)
+        private async void NetworkInformation_NetworkStatusChanged(object sender)
         {
             logger.WriteLine("Network status changed");
             multicastSsdpSocket.JoinMulticastGroup(Constants.SSDP_HOST);
+            await SearchDevices();
         }
 
         public void Stop()
@@ -107,8 +100,9 @@ namespace SSDP
             logger.WriteLine("Stopping ControlPoint...");
 
             multicastSsdpSocket.Dispose();
-            //multicastSsdpSocket.MessageReceived -= UnicastLocalSocket_MessageReceived;
             unicastLocalSocket.Dispose();
+
+            NetworkInformation.NetworkStatusChanged -= NetworkInformation_NetworkStatusChanged;
 
             isStarted = false;
 
@@ -118,19 +112,14 @@ namespace SSDP
         private async Task<uint> SendSearchDevicesRequest(SsdpMessage request, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            var outputStream = await multicastSsdpSocket.GetOutputStreamAsync(Constants.SSDP_HOST, Constants.SSDP_PORT);
+            var outputStream = await unicastLocalSocket.GetOutputStreamAsync(Constants.SSDP_HOST, Constants.SSDP_PORT);
             var writer = new DataWriter(outputStream);
             writer.WriteString(request.ToString());
             return await writer.StoreAsync();
         }
 
-        private async Task<bool> RegisterDevice(Device device)
+        private async Task RegisterDevice(Device device)
         {
-            if (devices.Contains(device))
-            {
-                return false;
-            }
-
             if (DeviceDiscovered != null)
             {
                 await dispatcher.RunAsync(CoreDispatcherPriority.Normal,
@@ -139,17 +128,10 @@ namespace SSDP
                         DeviceDiscovered?.Invoke(this, device);
                     }));
             }
-            devices.Add(device);
-            return true;
         }
 
-        private async Task<bool> UnregisterDevice(Device device)
+        private async Task UnregisterDevice(Device device)
         {
-            if (!devices.Contains(device))
-            {
-                return false;
-            }
-
             if (DeviceGone != null)
             {
                 await dispatcher.RunAsync(CoreDispatcherPriority.Normal,
@@ -158,10 +140,8 @@ namespace SSDP
                         DeviceGone?.Invoke(this, device);
                     }));
             }
-            devices.Remove(device);
-            return true;
         }
-
+        
         private async void UnicastLocalSocket_MessageReceived(DatagramSocket sender, DatagramSocketMessageReceivedEventArgs args)
         {
             string address = $"{args.RemoteAddress.CanonicalName}:{args.RemotePort}";
@@ -185,7 +165,6 @@ namespace SSDP
             string address = $"{args.RemoteAddress.CanonicalName}:{args.RemotePort}";
             var reader = args.GetDataReader();
             var data = reader.ReadString(reader.UnconsumedBufferLength);
-            logger.WriteLine($"MULTICAST ControlPoint [{address}]\n{data}");
             try
             {
                 var ssdpMessage = new SsdpMessage(data);
