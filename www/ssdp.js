@@ -90,7 +90,7 @@ exports.startAdvertising = function(target, port) {
 
 exports.stop = function() {
   return new Promise(function(success, error) {
-    if (cacheControl) {
+    if (cacheTimer) {
       clearInterval(cacheTimer);
       cacheTimer = null;
     }
