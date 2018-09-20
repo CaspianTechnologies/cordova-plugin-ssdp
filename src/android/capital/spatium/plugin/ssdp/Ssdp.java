@@ -265,7 +265,7 @@ public class Ssdp extends CordovaPlugin {
                 SsdpMessage searchMsg = new SsdpMessage(SsdpMessageType.MSEARCH);
                 searchMsg.setHeader("HOST", SSDP_ADDRESS);
                 searchMsg.setHeader("MAN", "\"ssdp:discover\"");
-                searchMsg.setHeader("MX", "2");
+                searchMsg.setHeader("MX", "1");
                 searchMsg.setHeader("ST", target);
 
                 for (int i = 0; i < 3; i++) {
@@ -413,10 +413,11 @@ public class Ssdp extends CordovaPlugin {
     private void sendByeBye() {
         SsdpMessage byebyeMsg = new SsdpMessage(SsdpMessageType.NOTIFY);
         byebyeMsg.setHeader("HOST", SSDP_ADDRESS);
-        byebyeMsg.setHeader("NTS", SsdpNotificationType.BYEBYE.getRepresentation());
         byebyeMsg.setHeader("NT", target);
+        byebyeMsg.setHeader("NTS", SsdpNotificationType.BYEBYE.getRepresentation());
         byebyeMsg.setHeader("SERVER", name);
         byebyeMsg.setHeader("USN", uuid);
+        byebyeMsg.setHeader("PORT", String.valueOf(port));
         try {
             ssdpService.sendMulticast(byebyeMsg);
         } catch (IOException e) {
@@ -464,8 +465,9 @@ public class Ssdp extends CordovaPlugin {
             Log.d(TAG, "search response __________________");
             SsdpMessage searchMsg = new SsdpMessage(SsdpMessageType.RESPONSE);
             searchMsg.setHeader("CACHE-CONTROL", MAX_AGE);
-            searchMsg.setHeader("ST", target);
+            searchMsg.setHeader("EXT", "");
             searchMsg.setHeader("SERVER", name);
+            searchMsg.setHeader("ST", target);
             searchMsg.setHeader("USN", uuid);
             searchMsg.setHeader("PORT", String.valueOf(port));
             Log.d(TAG, searchMsg.toString());
