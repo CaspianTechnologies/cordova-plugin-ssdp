@@ -42,6 +42,16 @@ function unregisterDevice(device) {
   }
 }
 
+function unregisterDevicesFromGoneNetwork(goneNetworkId) {
+  for (let kv of devices.entries()) {
+    const usn = kv[0];
+    const device = kv[1];
+
+    if (device.networkId === goneNetworkId) {
+      devices.delete(usn);
+    }
+  }
+}
 
 exports.startSearching = function(target) {
   return new Promise(function(success, error) {
@@ -68,6 +78,7 @@ exports.startSearching = function(target) {
         }
       }, 5000);
     }
+    exec(unregisterDevicesFromGoneNetwork, null, "SSDP", "setNetworkGoneCallback", [unregisterDevicesFromGoneNetwork]);
     exec(success, error, "SSDP", "startSearching", [target]);
   });
 }
@@ -94,12 +105,12 @@ exports.reset = function() {
   devices.clear();
 }
 
-exports.setDiscoveredCallback = function(callback) {
+exports.setDeviceDiscoveredCallback = function(callback) {
   deviceDiscoveredClientCallback = callback;
-  exec(registerDevice, null, "SSDP", "setDiscoveredCallback", [registerDevice]);
+  exec(registerDevice, null, "SSDP", "setDeviceDiscoveredCallback", [registerDevice]);
 }
 
-exports.setGoneCallback = function(callback) {
+exports.setDeviceGoneCallback = function(callback) {
   deviceGoneClientCallback = callback;
-  exec(unregisterDevice, null, "SSDP", "setGoneCallback", [unregisterDevice]);
+  exec(unregisterDevice, null, "SSDP", "setDeviceGoneCallback", [unregisterDevice]);
 }

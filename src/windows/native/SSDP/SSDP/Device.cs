@@ -13,6 +13,7 @@ namespace SSDP
         public string USN { get; set; }
         public DateTimeOffset Date { get; set; }
         public string CacheControl { get; set; }
+        public Guid NetworkId { get; set; }
         public bool IsExpired
         {
             get
@@ -42,7 +43,7 @@ namespace SSDP
             return USN == other.USN;
         }
 
-        public static Device ConstructDevice(HostName ip, SsdpMessage message)
+        public static Device ConstructDevice(HostName ip, Guid networkId, SsdpMessage message)
         {
             int port = -1;
             if (message.AdditionalHeaders.TryGetValue("PORT", out string portStr))
@@ -57,6 +58,7 @@ namespace SSDP
                 Name = message.Server ?? "NoName",
                 Date = message.Date,
                 CacheControl = message.CacheControl,
+                NetworkId = networkId,
             };
             return device;
         }

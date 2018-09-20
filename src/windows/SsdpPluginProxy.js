@@ -17,16 +17,22 @@ module.exports = {
             }, error);
     },
 
-    setDiscoveredCallback: function (_1, _2, params) {
+    setDeviceDiscoveredCallback: function (_1, _2, params) {
         initializeControlPoint();
         const callback = params[0];
         controlPoint.addEventListener('devicediscovered', callback);
     },
 
-    setGoneCallback: function (_1, _2, params) {
+    setDeviceGoneCallback: function (_1, _2, params) {
         initializeControlPoint();
         const callback = params[0];
         controlPoint.addEventListener('devicegone', callback);
+    },
+
+    setNetworkGoneCallback: function (_1, _2, params) {
+        initializeControlPoint();
+        const callback = params[0];
+        controlPoint.addEventListener('networkgone', callback);
     },
 
     stop: function (success, error, params) {

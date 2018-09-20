@@ -16,6 +16,7 @@ namespace SSDP
     {
         public event EventHandler<Device> DeviceDiscovered;
         public event EventHandler<Device> DeviceGone;
+        public event EventHandler<Guid> NetworkGone;
         public string Target { get; set; } = "ssdp:all";
 
         private DatagramSocket multicastSsdpSocket;
@@ -23,6 +24,7 @@ namespace SSDP
         private ILogger logger;
         private bool isStarted = false;
         private readonly CoreDispatcher dispatcher;
+        private IList<NetworkAdapterInfo> networks = new List<NetworkAdapterInfo>();
 
         public ControlPoint() : this(new SystemLogger()) { }
 
@@ -45,7 +47,6 @@ namespace SSDP
                     MAN = "ssdp:discover",
                     MX = "1",
                     ST = Target,
-                    UserAgent = "Spatium Wallet Device",
                 };
 
                 await SendSearchDevicesRequest(searchRequest, token);
@@ -78,6 +79,8 @@ namespace SSDP
 
                 NetworkInformation.NetworkStatusChanged += NetworkInformation_NetworkStatusChanged;
 
+                networks = GetNetworks();
+
                 isStarted = true;
 
                 logger.WriteLine("ControlPoint started.");
@@ -87,6 +90,24 @@ namespace SSDP
         private async void NetworkInformation_NetworkStatusChanged(object sender)
         {
             logger.WriteLine("Network status changed");
+            var newNetworks = GetNetworks();
+
+            var goneNetworkIds = networks
+                .Select(n => n.NetworkAdapter.NetworkAdapterId)
+                .Where(id => !newNetworks.Any(n => n.NetworkAdapter.NetworkAdapterId == id)).ToList();
+            foreach (var networkId in goneNetworkIds)
+            {
+                if (NetworkGone != null)
+                {
+                    await dispatcher.RunAsync(CoreDispatcherPriority.Normal,
+                        new DispatchedHandler(() =>
+                        {
+                            NetworkGone?.Invoke(this, networkId);
+                        }));
+                }
+            }
+
+            networks = newNetworks;
             multicastSsdpSocket.JoinMulticastGroup(Constants.SSDP_HOST);
             await SearchDevices();
         }
@@ -107,6 +128,19 @@ namespace SSDP
             isStarted = false;
 
             logger.WriteLine("ControlPoint stopped.");
+        }
+
+        private IList<NetworkAdapterInfo> GetNetworks()
+        {
+            return NetworkInformation.GetHostNames()
+                .Where(hostName => hostName.IPInformation != null)
+                .Select(hostName => new NetworkAdapterInfo
+                {
+                    NetworkAdapter = hostName.IPInformation.NetworkAdapter,
+                    IPAddress = IPAddress.Parse(hostName.CanonicalName),
+                    SubnetMask = SubnetMask.CreateByNetBitLength((int)hostName.IPInformation.PrefixLength)
+                })
+                .ToList();
         }
 
         private async Task<uint> SendSearchDevicesRequest(SsdpMessage request, CancellationToken token)
@@ -141,7 +175,22 @@ namespace SSDP
                     }));
             }
         }
-        
+
+        private bool TryFindNetworkAdapterInfoByIp(string ip, out NetworkAdapterInfo networkAdapterInfo)
+        {
+            var ipAddress = IPAddress.Parse(ip);
+            foreach (var network in networks)
+            {
+                if (ipAddress.IsInSameSubnet(network.IPAddress, network.SubnetMask))
+                {
+                    networkAdapterInfo = network;
+                    return true;
+                }
+            }
+            networkAdapterInfo = null;
+            return false;
+        }
+
         private async void UnicastLocalSocket_MessageReceived(DatagramSocket sender, DatagramSocketMessageReceivedEventArgs args)
         {
             string address = $"{args.RemoteAddress.CanonicalName}:{args.RemotePort}";
@@ -151,7 +200,14 @@ namespace SSDP
             try
             {
                 SsdpMessage ssdpMessage = new SsdpMessage(data);
-                Device device = Device.ConstructDevice(args.RemoteAddress, ssdpMessage);
+
+                if (!TryFindNetworkAdapterInfoByIp(args.RemoteAddress.CanonicalName, out NetworkAdapterInfo network))
+                {
+                    logger.WriteLine($"Network for ip {args.RemoteAddress.CanonicalName} not found");
+                    return;
+                }
+
+                Device device = Device.ConstructDevice(args.RemoteAddress, network.NetworkAdapter.NetworkAdapterId, ssdpMessage);
                 await RegisterDevice(device);
             }
             catch (InvalidMessageException e)
@@ -176,14 +232,20 @@ namespace SSDP
                     }
                 }
 
+                if (!TryFindNetworkAdapterInfoByIp(args.RemoteAddress.CanonicalName, out NetworkAdapterInfo network))
+                {
+                    logger.WriteLine($"Network for ip {args.RemoteAddress.CanonicalName} not found");
+                    return;
+                }
+
                 if (ssdpMessage.Type == SsdpMessageType.AdvertiseAlive)
                 {
-                    var device = Device.ConstructDevice(args.RemoteAddress, ssdpMessage);
+                    var device = Device.ConstructDevice(args.RemoteAddress, network.NetworkAdapter.NetworkAdapterId, ssdpMessage);
                     await RegisterDevice(device);
                 }
                 if (ssdpMessage.Type == SsdpMessageType.AdvertiseByeBye)
                 {
-                    var device = Device.ConstructDevice(args.RemoteAddress, ssdpMessage);
+                    var device = Device.ConstructDevice(args.RemoteAddress, network.NetworkAdapter.NetworkAdapterId, ssdpMessage);
                     await UnregisterDevice(device);
                 }
             }
