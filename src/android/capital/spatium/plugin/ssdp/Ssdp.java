@@ -166,9 +166,11 @@ public class Ssdp extends CordovaPlugin {
             Log.d(TAG, "stopThread");
             thread.interrupt();
 
-            PluginResult result = new PluginResult(PluginResult.Status.OK, mReceiver.currentNetworkName);
-            result.setKeepCallback(true);
-            mNetworkGoneCallback.sendPluginResult(result);
+            if (currentDeviceType == SsdpDeviceType.CONTROL_POINT) {
+                PluginResult result = new PluginResult(PluginResult.Status.OK, mReceiver.currentNetworkName);
+                result.setKeepCallback(true);
+                mNetworkGoneCallback.sendPluginResult(result);
+            }
         }
     }
 
