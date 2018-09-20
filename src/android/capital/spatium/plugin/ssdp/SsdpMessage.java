@@ -35,7 +35,7 @@ public class SsdpMessage {
     }
 
     public SsdpNotificationType getNotificationType() {
-        return SsdpNotificationType.fromRepresentation(headers.get(SsdpCommonHeaders.NTS.name()));
+        return SsdpNotificationType.fromRepresentation(headers.get(SsdpCommonHeadersType.NTS.name()));
     }
 
     public static SsdpMessage toMessage(String raw) throws IllegalArgumentException {

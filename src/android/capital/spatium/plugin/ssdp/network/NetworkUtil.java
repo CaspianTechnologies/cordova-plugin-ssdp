@@ -13,6 +13,10 @@ public class NetworkUtil {
         return activeNetworkInfo;
     }
 
+    public static boolean isWiFi(int type){
+        return ConnectivityManager.TYPE_WIFI == type;
+    }
+
     public static String getConnectivityTypeString(NetworkInfo activeNetworkInfo) {
         switch (activeNetworkInfo.getType()) {
             case ConnectivityManager.TYPE_WIFI:

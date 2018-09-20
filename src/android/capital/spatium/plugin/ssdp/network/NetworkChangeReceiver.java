@@ -4,23 +4,28 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.util.Log;
 
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.PluginResult;
 
+import capital.spatium.plugin.ssdp.Ssdp;
+
 public class NetworkChangeReceiver extends BroadcastReceiver {
     public boolean isRegistered;
 
     private Context mContext;
+    private Ssdp ssdp;
     private CallbackContext callbackContext = null;
     private static final String TAG = "Cordova SSDP Network";
     private static final int NO_CONNECTION_TYPE = -1;
     private static int sLastType = NO_CONNECTION_TYPE;
 
-    public NetworkChangeReceiver(CallbackContext callbackContext) {
+    public NetworkChangeReceiver(CallbackContext callbackContext, Ssdp ssdp) {
         this.callbackContext = callbackContext;
+        this.ssdp = ssdp;
     }
 
     @Override
@@ -39,8 +44,15 @@ public class NetworkChangeReceiver extends BroadcastReceiver {
                 String extra = activeNetworkInfo.getExtraInfo();
 
                 log = status + " " + type + " " + extra;
+
+                if (NetworkUtil.isWiFi(currentType)){
+                    ssdp.refreshThread();
+                } else {
+                    ssdp.stopThread();
+                }
             } else {
                 log = "Disconnected";
+                ssdp.stopThread();
             }
 
             sLastType = currentType;

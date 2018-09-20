@@ -39,6 +39,7 @@ public class Ssdp extends CordovaPlugin {
     private CallbackContext goneCallback = null;
     private CallbackContext mSearchCallback = null;
     private CallbackContext mAdvertiseCallback = null;
+    private CallbackContext mStopCallback = null;
 
     private static final String DEFAULT_TARGET = "spatium";
     private static final String DEFAULT_NAME = "Android/" + Build.VERSION.RELEASE;
@@ -59,6 +60,7 @@ public class Ssdp extends CordovaPlugin {
 
     private NetworkChangeReceiver mReceiver = null;
     public static final String ACTION_CONNECTIVITY_CHANGE = "android.net.conn.CONNECTIVITY_CHANGE";
+    public static SsdpDeviceType currentDeviceType = SsdpDeviceType.NONE;
 
     @Override
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
@@ -67,7 +69,7 @@ public class Ssdp extends CordovaPlugin {
 
     @Override
     public boolean execute(String action, JSONArray args, final CallbackContext callbackContext) throws JSONException {
-        if (mReceiver == null) mReceiver = new NetworkChangeReceiver(callbackContext);
+        if (mReceiver == null) mReceiver = new NetworkChangeReceiver(callbackContext, this);
         if (!mReceiver.isRegistered) {
             mReceiver.register(cordova.getActivity(), new IntentFilter(ACTION_CONNECTIVITY_CHANGE));
         }
@@ -106,7 +108,8 @@ public class Ssdp extends CordovaPlugin {
             advertise();
             return true;
         } else if (action.equals("stop")) {
-            stop(callbackContext);
+            setStopCallback(callbackContext);
+            stop();
             return true;
         } else if (action.equals("setDiscoveredCallback")) {
             setDiscoveredCallback(callbackContext);
@@ -127,27 +130,58 @@ public class Ssdp extends CordovaPlugin {
         if (thread != null) {
             thread.interrupt();
         }
+        currentDeviceType = SsdpDeviceType.NONE;
         mReceiver.unregister(cordova.getActivity());
         super.onDestroy();
+    }
+
+    public void refreshThread() {
+        if(!thread.isAlive()) {
+            try {
+                Log.d(TAG,"refreshThread");
+                switch (currentDeviceType) {
+                    case CONTROL_POINT:
+                        search();
+                        break;
+                    case ROOT_DEVICE:
+                        advertise();
+                        break;
+                    default:
+                        break;
+
+                }
+            } catch (Exception e) {
+                Log.d(TAG, e.getMessage());
+            }
+        }
+    }
+
+    public void stopThread() {
+        Log.d(TAG,"stopThread");
+        thread.interrupt();
     }
 
     private void search() {
         thread = new SearchThread();
         thread.start();
+        currentDeviceType = SsdpDeviceType.CONTROL_POINT;
         PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
         result.setKeepCallback(true);
         mSearchCallback.sendPluginResult(result);
     }
 
-    private void stop(final CallbackContext callbackContext) {
+    private void stop() {
         thread.interrupt();
-        PluginResult result = new PluginResult(PluginResult.Status.OK);
-        callbackContext.sendPluginResult(result);
+        currentDeviceType = SsdpDeviceType.NONE;
+        PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
+        result.setKeepCallback(true);
+        mStopCallback.sendPluginResult(result);
     }
 
     private void advertise() {
         thread = new AdvertiseThread();
         thread.start();
+        currentDeviceType = SsdpDeviceType.ROOT_DEVICE;
         PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
         result.setKeepCallback(true);
         mAdvertiseCallback.sendPluginResult(result);
@@ -167,6 +201,10 @@ public class Ssdp extends CordovaPlugin {
 
     private void setGoneCallback(final CallbackContext callbackContext) {
         goneCallback = callbackContext;
+    }
+
+    private void setStopCallback(final CallbackContext callbackContext) {
+        mStopCallback = callbackContext;
     }
 
     private static byte[] convertIpAddress(int ip) {
