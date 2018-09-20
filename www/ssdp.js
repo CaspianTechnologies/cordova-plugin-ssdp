@@ -43,12 +43,9 @@ function unregisterDevice(device) {
 }
 
 function unregisterDevicesFromGoneNetwork(goneNetworkId) {
-  for (let kv of devices.entries()) {
-    const usn = kv[0];
-    const device = kv[1];
-
-    if (device.networkId === goneNetworkId) {
-      devices.delete(usn);
+  for (let device of devices.values()) {
+    if (device.networkId === goneNetworkId.toString()) {
+      unregisterDevice(device);
     }
   }
 }
