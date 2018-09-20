@@ -136,9 +136,9 @@ public class Ssdp extends CordovaPlugin {
     }
 
     public void refreshThread() {
-        if(!thread.isAlive()) {
+        if (thread != null && !thread.isAlive()) {
             try {
-                Log.d(TAG,"refreshThread");
+                Log.d(TAG, "refreshThread");
                 switch (currentDeviceType) {
                     case CONTROL_POINT:
                         search();
@@ -157,8 +157,10 @@ public class Ssdp extends CordovaPlugin {
     }
 
     public void stopThread() {
-        Log.d(TAG,"stopThread");
-        thread.interrupt();
+        if (thread != null) {
+            Log.d(TAG, "stopThread");
+            thread.interrupt();
+        }
     }
 
     private void search() {
