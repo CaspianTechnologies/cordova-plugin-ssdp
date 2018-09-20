@@ -39,6 +39,8 @@
                      target-dir="src/capital/spatium/plugin/ssdp"/>
         <source-file src="src/android/capital/spatium/plugin/ssdp/SsdpService.java"
                      target-dir="src/capital/spatium/plugin/ssdp"/>
+        <source-file src="src/android/capital/spatium/plugin/ssdp/Device.java"
+                     target-dir="src/capital/spatium/plugin/ssdp"/>
         <source-file
                 src="src/android/capital/spatium/plugin/ssdp/network/NetworkChangeReceiver.java"
                 target-dir="src/capital/spatium/plugin/ssdp/network"/>
