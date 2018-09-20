@@ -40,6 +40,7 @@ public class Ssdp extends CordovaPlugin {
     private CallbackContext mSearchCallback = null;
     private CallbackContext mAdvertiseCallback = null;
     private CallbackContext mStopCallback = null;
+    private CallbackContext mNetworkGoneCallback = null;
 
     private static final String DEFAULT_TARGET = "spatium";
     private static final String DEFAULT_NAME = "Android/" + Build.VERSION.RELEASE;
@@ -116,6 +117,9 @@ public class Ssdp extends CordovaPlugin {
             return true;
         } else if (action.equals("setDeviceGoneCallback")) {
             setDeviceGoneCallback(callbackContext);
+            return true;
+        } else if (action.equals("setNetworkGoneCallback")) {
+            setNetworkGoneCallback(callbackContext);
             return true;
         }
 
@@ -203,6 +207,10 @@ public class Ssdp extends CordovaPlugin {
 
     private void setDeviceGoneCallback(final CallbackContext callbackContext) {
         goneCallback = callbackContext;
+    }
+
+    private void setNetworkGoneCallback(final CallbackContext callbackContext) {
+        mNetworkGoneCallback = callbackContext;
     }
 
     private void setStopCallback(final CallbackContext callbackContext) {
