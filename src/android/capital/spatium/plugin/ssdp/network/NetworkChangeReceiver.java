@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.util.Log;
 
@@ -15,6 +14,7 @@ import capital.spatium.plugin.ssdp.Ssdp;
 
 public class NetworkChangeReceiver extends BroadcastReceiver {
     public boolean isRegistered;
+    public String currentNetworkName;
 
     private Context mContext;
     private Ssdp ssdp;
@@ -44,6 +44,8 @@ public class NetworkChangeReceiver extends BroadcastReceiver {
                 String extra = activeNetworkInfo.getExtraInfo();
 
                 log = status + " " + type + " " + extra;
+
+                currentNetworkName = extra;
 
                 if (NetworkUtil.isWiFi(currentType)){
                     ssdp.refreshThread();

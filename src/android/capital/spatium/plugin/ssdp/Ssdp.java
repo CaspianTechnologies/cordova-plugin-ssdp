@@ -22,6 +22,7 @@ import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 
+
 import capital.spatium.plugin.ssdp.network.NetworkChangeReceiver;
 
 
@@ -35,8 +36,8 @@ public class Ssdp extends CordovaPlugin {
     private String uuid = DEFAULT_UUID;
     private int port = DEFAULT_PORT;
 
-    private CallbackContext discoveredCallback = null;
-    private CallbackContext goneCallback = null;
+    private CallbackContext deviceDiscoveredCallback = null;
+    private CallbackContext deviceGoneCallback = null;
     private CallbackContext mSearchCallback = null;
     private CallbackContext mAdvertiseCallback = null;
     private CallbackContext mStopCallback = null;
@@ -164,6 +165,10 @@ public class Ssdp extends CordovaPlugin {
         if (thread != null) {
             Log.d(TAG, "stopThread");
             thread.interrupt();
+
+            PluginResult result = new PluginResult(PluginResult.Status.OK, mReceiver.currentNetworkName);
+            result.setKeepCallback(true);
+            mNetworkGoneCallback.sendPluginResult(result);
         }
     }
 
@@ -202,11 +207,11 @@ public class Ssdp extends CordovaPlugin {
     }
 
     private void setDeviceDiscoveredCallback(final CallbackContext callbackContext) {
-        discoveredCallback = callbackContext;
+        deviceDiscoveredCallback = callbackContext;
     }
 
     private void setDeviceGoneCallback(final CallbackContext callbackContext) {
-        goneCallback = callbackContext;
+        deviceGoneCallback = callbackContext;
     }
 
     private void setNetworkGoneCallback(final CallbackContext callbackContext) {
@@ -324,10 +329,14 @@ public class Ssdp extends CordovaPlugin {
 
             JSONObject item = new JSONObject();
             try {
-                item.put("ip", packet.getAddress().getHostAddress());
-                item.put("port", message.getHeader("PORT"));
-                item.put("name", message.getHeader("SERVER"));
-                item.put("usn", message.getHeader("USN"));
+                Device device = new Device(
+                        packet.getAddress().getHostAddress(),
+                        Integer.parseInt(message.getHeader("PORT")),
+                        message.getHeader("SERVER"),
+                        message.getHeader("USN"),
+                        message.getHeader("CACHE-CONTROL"),
+                        mReceiver.currentNetworkName);
+                item = device.toJSON();
             } catch (JSONException e) {
                 e.printStackTrace();
                 PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
@@ -339,19 +348,19 @@ public class Ssdp extends CordovaPlugin {
             result.setKeepCallback(true);
 
             if (message.getType().equals(SsdpMessageType.RESPONSE)) {
-                discoveredCallback.sendPluginResult(result);
+                deviceDiscoveredCallback.sendPluginResult(result);
                 return;
             }
 
             String nts = message.getHeader("NTS");
 
             if (nts != null && nts.equals(SsdpNotificationType.ALIVE.getRepresentation())) {
-                discoveredCallback.sendPluginResult(result);
+                deviceDiscoveredCallback.sendPluginResult(result);
                 return;
             }
 
             if (nts != null && nts.equals(SsdpNotificationType.BYEBYE.getRepresentation())) {
-                goneCallback.sendPluginResult(result);
+                deviceGoneCallback.sendPluginResult(result);
             }
         }
     };
