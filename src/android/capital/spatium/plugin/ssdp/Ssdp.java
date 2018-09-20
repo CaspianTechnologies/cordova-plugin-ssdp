@@ -111,11 +111,11 @@ public class Ssdp extends CordovaPlugin {
             setStopCallback(callbackContext);
             stop();
             return true;
-        } else if (action.equals("setDiscoveredCallback")) {
-            setDiscoveredCallback(callbackContext);
+        } else if (action.equals("setDeviceDiscoveredCallback")) {
+            setDeviceDiscoveredCallback(callbackContext);
             return true;
-        } else if (action.equals("setGoneCallback")) {
-            setGoneCallback(callbackContext);
+        } else if (action.equals("setDeviceGoneCallback")) {
+            setDeviceGoneCallback(callbackContext);
             return true;
         }
 
@@ -195,11 +195,11 @@ public class Ssdp extends CordovaPlugin {
         mAdvertiseCallback = callbackContext;
     }
 
-    private void setDiscoveredCallback(final CallbackContext callbackContext) {
+    private void setDeviceDiscoveredCallback(final CallbackContext callbackContext) {
         discoveredCallback = callbackContext;
     }
 
-    private void setGoneCallback(final CallbackContext callbackContext) {
+    private void setDeviceGoneCallback(final CallbackContext callbackContext) {
         goneCallback = callbackContext;
     }
 
