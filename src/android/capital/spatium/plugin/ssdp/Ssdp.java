@@ -2,6 +2,7 @@ package capital.spatium.plugin.ssdp;
 
 
 import android.content.Context;
+import android.content.IntentFilter;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
@@ -21,11 +22,7 @@ import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 
-import capital.spatium.plugin.ssdp.SsdpChannel;
-import capital.spatium.plugin.ssdp.SsdpMessage;
-import capital.spatium.plugin.ssdp.SsdpMessageType;
-import capital.spatium.plugin.ssdp.SsdpPacketListener;
-import capital.spatium.plugin.ssdp.SsdpService;
+import capital.spatium.plugin.ssdp.network.NetworkChangeReceiver;
 
 
 public class Ssdp extends CordovaPlugin {
@@ -60,6 +57,9 @@ public class Ssdp extends CordovaPlugin {
 
     private static final String TAG = "Cordova SSDP";
 
+    private NetworkChangeReceiver mReceiver = null;
+    public static final String ACTION_CONNECTIVITY_CHANGE = "android.net.conn.CONNECTIVITY_CHANGE";
+
     @Override
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
         super.initialize(cordova, webView);
@@ -67,6 +67,11 @@ public class Ssdp extends CordovaPlugin {
 
     @Override
     public boolean execute(String action, JSONArray args, final CallbackContext callbackContext) throws JSONException {
+        if (mReceiver == null) mReceiver = new NetworkChangeReceiver(callbackContext);
+        if (!mReceiver.isRegistered) {
+            mReceiver.register(cordova.getActivity(), new IntentFilter(ACTION_CONNECTIVITY_CHANGE));
+        }
+
         Log.d(TAG, action);
         Log.d(TAG, args.toString());
 
@@ -94,11 +99,11 @@ public class Ssdp extends CordovaPlugin {
 
         if (action.equals("startSearching")) {
             setSearchCallback(callbackContext);
-            search(callbackContext);
+            search();
             return true;
         } else if (action.equals("startAdvertising")) {
             setAdvertiseCallback(callbackContext);
-            advertise(callbackContext);
+            advertise();
             return true;
         } else if (action.equals("stop")) {
             stop(callbackContext);
@@ -113,6 +118,7 @@ public class Ssdp extends CordovaPlugin {
 
         PluginResult result = new PluginResult(PluginResult.Status.INVALID_ACTION);
         callbackContext.sendPluginResult(result);
+
         return false;
     }
 
@@ -121,10 +127,11 @@ public class Ssdp extends CordovaPlugin {
         if (thread != null) {
             thread.interrupt();
         }
+        mReceiver.unregister(cordova.getActivity());
         super.onDestroy();
     }
 
-    private void search(final CallbackContext callbackContext) {
+    private void search() {
         thread = new SearchThread();
         thread.start();
         PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
@@ -138,7 +145,7 @@ public class Ssdp extends CordovaPlugin {
         callbackContext.sendPluginResult(result);
     }
 
-    private void advertise(final CallbackContext callbackContext) {
+    private void advertise() {
         thread = new AdvertiseThread();
         thread.start();
         PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
