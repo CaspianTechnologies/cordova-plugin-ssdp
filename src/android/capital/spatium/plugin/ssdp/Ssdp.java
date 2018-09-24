@@ -1,8 +1,8 @@
 package capital.spatium.plugin.ssdp;
 
-
+import android.annotation.TargetApi;
 import android.content.Context;
-import android.content.IntentFilter;
+import android.net.NetworkInfo;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
@@ -15,103 +15,64 @@ import org.apache.cordova.CordovaWebView;
 import org.apache.cordova.PluginResult;
 import org.json.JSONArray;
 import org.json.JSONException;
-import org.json.JSONObject;
 
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
-
+import java.util.function.Consumer;
 
 import capital.spatium.plugin.ssdp.network.NetworkChangeReceiver;
+import capital.spatium.plugin.ssdp.network.NetworkUtil;
 
+@TargetApi(Build.VERSION_CODES.N)
 
 public class Ssdp extends CordovaPlugin {
+    abstract class RestartableThread extends Thread {
+        abstract void restart();
+    }
 
-    private Thread thread;
-
-    private SsdpService ssdpService = null;
-    private String target = DEFAULT_TARGET;
-    private String name = DEFAULT_NAME;
-    private String uuid = DEFAULT_UUID;
-    private int port = DEFAULT_PORT;
+    private RestartableThread thread;
 
     private CallbackContext deviceDiscoveredCallback = null;
     private CallbackContext deviceGoneCallback = null;
-    private CallbackContext mSearchCallback = null;
-    private CallbackContext mAdvertiseCallback = null;
-    private CallbackContext mStopCallback = null;
     private CallbackContext mNetworkGoneCallback = null;
-
-    private static final String DEFAULT_TARGET = "spatium";
-    private static final String DEFAULT_NAME = "Android/" + Build.VERSION.RELEASE;
-    private static final String DEFAULT_UUID = "uuid";
-    private static final int DEFAULT_PORT = 5666;
 
     private static final String MAX_AGE = "max-age = 30";
 
-    private static final String SSDP_ADDRESS =
-            SsdpChannel.SSDP_MCAST_ADDRESS.getAddress().getHostName()
-                    + ":"
-                    + SsdpChannel.SSDP_MCAST_ADDRESS.getPort();
+    private static final String SSDP_ADDRESS = SsdpChannel.SSDP_MCAST_ADDRESS.getAddress().getHostName() + ":"
+            + SsdpChannel.SSDP_MCAST_ADDRESS.getPort();
 
     private static final int ALIVE_PERIOD = 10000;
     private static final int MSEARCH_PERIOD = 1000;
 
     private static final String TAG = "Cordova SSDP";
 
-    private NetworkChangeReceiver mReceiver = null;
-    public static final String ACTION_CONNECTIVITY_CHANGE = "android.net.conn.CONNECTIVITY_CHANGE";
-    public static SsdpDeviceType currentDeviceType = SsdpDeviceType.NONE;
+    private NetworkChangeReceiver mReceiver;
+    private String mLastNetworkId = "Unknown";
 
     @Override
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
         super.initialize(cordova, webView);
+
+        mReceiver = new NetworkChangeReceiver(cordova.getActivity());
+        mReceiver.setNetworkChangeConsumer(new NetworkChangeConsumer());
+        mReceiver.register();
     }
 
     @Override
     public boolean execute(String action, JSONArray args, final CallbackContext callbackContext) throws JSONException {
-        if (mReceiver == null) mReceiver = new NetworkChangeReceiver(callbackContext, this);
-        if (!mReceiver.isRegistered) {
-            mReceiver.register(cordova.getActivity(), new IntentFilter(ACTION_CONNECTIVITY_CHANGE));
-        }
-
         Log.d(TAG, action);
         Log.d(TAG, args.toString());
 
-        if (args != null && args.length() > 0) {
-            String jsonTarget = args.optString(0);
-            if (jsonTarget != null && !jsonTarget.isEmpty()) {
-                target = jsonTarget;
-            }
-
-            int jsonPort = args.optInt(1);
-            if (jsonPort > 0) {
-                port = jsonPort;
-            }
-
-            String jsonName = args.optString(2);
-            if (jsonName != null && !jsonName.isEmpty()) {
-                name = jsonName;
-            }
-
-            String jsonUuid = args.optString(3);
-            if (jsonUuid != null && !jsonUuid.isEmpty()) {
-                uuid = jsonUuid;
-            }
-        }
-
         if (action.equals("startSearching")) {
-            setSearchCallback(callbackContext);
-            search();
+            search(args, callbackContext);
             return true;
         } else if (action.equals("startAdvertising")) {
-            setAdvertiseCallback(callbackContext);
-            advertise();
+            advertise(args, callbackContext);
             return true;
         } else if (action.equals("stop")) {
-            setStopCallback(callbackContext);
-            stop();
+            stop(args, callbackContext);
             return true;
         } else if (action.equals("setDeviceDiscoveredCallback")) {
             setDeviceDiscoveredCallback(callbackContext);
@@ -135,77 +96,42 @@ public class Ssdp extends CordovaPlugin {
         if (thread != null) {
             thread.interrupt();
         }
-        currentDeviceType = SsdpDeviceType.NONE;
-        mReceiver.unregister(cordova.getActivity());
+        mReceiver.unregister();
         super.onDestroy();
     }
 
-    public void refreshThread() {
-        if (thread != null && !thread.isAlive()) {
-            try {
-                Log.d(TAG, "refreshThread");
-                switch (currentDeviceType) {
-                    case CONTROL_POINT:
-                        search();
-                        break;
-                    case ROOT_DEVICE:
-                        advertise();
-                        break;
-                    default:
-                        break;
+    private void search(JSONArray args, final CallbackContext callbackContext) {
+        String target = args.optString(0);
 
-                }
-            } catch (Exception e) {
-                Log.d(TAG, e.getMessage());
-            }
-        }
-    }
-
-    public void stopThread() {
-        if (thread != null) {
-            Log.d(TAG, "stopThread");
+        if (thread != null && thread.isAlive()) {
             thread.interrupt();
-
-            if (currentDeviceType == SsdpDeviceType.CONTROL_POINT) {
-                PluginResult result = new PluginResult(PluginResult.Status.OK, mReceiver.currentNetworkName);
-                result.setKeepCallback(true);
-                mNetworkGoneCallback.sendPluginResult(result);
-            }
         }
-    }
 
-    private void search() {
-        thread = new SearchThread();
+        thread = new SearchThread(target, callbackContext);
         thread.start();
-        currentDeviceType = SsdpDeviceType.CONTROL_POINT;
-        PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
-        result.setKeepCallback(true);
-        mSearchCallback.sendPluginResult(result);
     }
 
-    private void stop() {
-        thread.interrupt();
-        currentDeviceType = SsdpDeviceType.NONE;
-        PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
-        result.setKeepCallback(true);
-        mStopCallback.sendPluginResult(result);
-    }
+    private void advertise(JSONArray args, final CallbackContext callbackContext) {
+        String target = args.optString(0);
+        int port = args.optInt(1);
+        String name = args.optString(2);
+        String uuid = args.optString(3);
 
-    private void advertise() {
-        thread = new AdvertiseThread();
+        if (thread != null && thread.isAlive()) {
+            thread.interrupt();
+        }
+
+        thread = new AdvertiseThread(target, port, name, uuid, callbackContext);
         thread.start();
-        currentDeviceType = SsdpDeviceType.ROOT_DEVICE;
-        PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
-        result.setKeepCallback(true);
-        mAdvertiseCallback.sendPluginResult(result);
     }
 
-    private void setSearchCallback(CallbackContext callbackContext) {
-        mSearchCallback = callbackContext;
-    }
+    private void stop(JSONArray args, final CallbackContext callbackContext) {
+        if (thread != null && thread.isAlive()) {
+            thread.interrupt();
+        }
 
-    private void setAdvertiseCallback(CallbackContext callbackContext) {
-        mAdvertiseCallback = callbackContext;
+        PluginResult result = new PluginResult(PluginResult.Status.OK);
+        callbackContext.sendPluginResult(result);
     }
 
     private void setDeviceDiscoveredCallback(final CallbackContext callbackContext) {
@@ -220,26 +146,16 @@ public class Ssdp extends CordovaPlugin {
         mNetworkGoneCallback = callbackContext;
     }
 
-    private void setStopCallback(final CallbackContext callbackContext) {
-        mStopCallback = callbackContext;
-    }
-
     private static byte[] convertIpAddress(int ip) {
-        return new byte[]{
-                (byte) (ip & 0xFF),
-                (byte) ((ip >> 8) & 0xFF),
-                (byte) ((ip >> 16) & 0xFF),
-                (byte) ((ip >> 24) & 0xFF)};
+        return new byte[] { (byte) (ip & 0xFF), (byte) ((ip >> 8) & 0xFF), (byte) ((ip >> 16) & 0xFF),
+                (byte) ((ip >> 24) & 0xFF) };
     }
 
-    private boolean containsTarget(SsdpMessage message) {
-        if (message.getHeader("ST") != null && message.getHeader("ST").equals(target)) {
-            return true;
-        }
-        if (message.getHeader("NT") != null && message.getHeader("NT").equals(target)) {
-            return true;
-        }
-        return false;
+    private boolean containsTarget(SsdpMessage message, String target) {
+        return message.getHeader("ST") != null &&
+               message.getHeader("ST").equals(target) ||
+               message.getHeader("NT") != null &&
+               message.getHeader("NT").equals(target);
     }
 
     private NetworkInterface getWifiNetworkInterface() throws IOException {
@@ -251,16 +167,103 @@ public class Ssdp extends CordovaPlugin {
         return NetworkInterface.getByInetAddress(InetAddress.getByAddress(b));
     }
 
-    class SearchThread extends Thread {
+    private SsdpMessage parseMessage(DatagramPacket packet) {
+        if (packet == null || packet.getData() == null) {
+            throw new IllegalArgumentException("Not an ssdp packet");
+        }
+
+        final String msgString = new String(packet.getData()).trim();
+        return SsdpMessage.toMessage(msgString);
+    }
+
+    class SearchConsumer implements Consumer<DatagramPacket> {
+        private final String mTarget;
+
+        SearchConsumer(String target) {
+            mTarget = target;
+        }
+
         @Override
-        public void run() {
+        public void accept(DatagramPacket packet) {
+            SsdpMessage message = parseMessage(packet);
+
+            if (message == null || !containsTarget(message, mTarget)) {
+                return;
+            }
+
+            final InetAddress origin = packet.getAddress();
+
+            if (origin == null) {
+                return;
+            }
+
+            Log.d(TAG, "__________________");
+            if (origin.getHostAddress() != null) {
+                final String addr = origin.getHostAddress();
+                Log.d(TAG, addr);
+            }
+            Log.d(TAG, message.toString());
+            Log.d(TAG, "__________________");
+
+            Device device = new Device(
+                origin.getHostAddress(),
+                Integer.parseInt(message.getHeader("PORT")),
+                message.getHeader("SERVER"),
+                message.getHeader("USN"),
+                message.getHeader("CACHE-CONTROL"),
+                mLastNetworkId
+            );
+
             try {
-                if (ssdpService != null) {
-                    ssdpService.close();
+                PluginResult result = new PluginResult(PluginResult.Status.OK, device.toJSON());
+                result.setKeepCallback(true);
+
+                if (message.getType().equals(SsdpMessageType.RESPONSE)) {
+                    deviceDiscoveredCallback.sendPluginResult(result);
+                } else {
+                    String nts = message.getHeader("NTS");
+
+                    if (nts != null && nts.equals(SsdpNotificationType.ALIVE.getRepresentation())) {
+                        deviceDiscoveredCallback.sendPluginResult(result);
+                    } else if (nts != null && nts.equals(SsdpNotificationType.BYEBYE.getRepresentation())) {
+                        deviceGoneCallback.sendPluginResult(result);
+                    }
                 }
 
+
+            } catch (JSONException ignored) {}
+        }
+    }
+
+    class SearchThread extends RestartableThread {
+        private final String mTarget;
+        private final CallbackContext mCallbackContext;
+
+        private boolean silent = false;
+
+        SearchThread(String target, final CallbackContext callbackContext) {
+            mTarget = target;
+            mCallbackContext = callbackContext;
+        }
+
+        @Override
+        public void restart() {
+            silent = true;
+
+            interrupt();
+
+            silent = false;
+            start();
+        }
+
+        @Override
+        public void run() {
+            SsdpService ssdpService = null;
+            try {
                 NetworkInterface ni = getWifiNetworkInterface();
-                ssdpService = new SsdpService(ni, searchPacketListener, true);
+                ssdpService = new SsdpService(ni, true);
+                ssdpService.setMulticastConsumer(new SearchConsumer(mTarget));
+                ssdpService.setUnicastConsumer(new SearchConsumer(mTarget));
 
                 ssdpService.listen();
 
@@ -268,25 +271,31 @@ public class Ssdp extends CordovaPlugin {
                 searchMsg.setHeader("HOST", SSDP_ADDRESS);
                 searchMsg.setHeader("MAN", "\"ssdp:discover\"");
                 searchMsg.setHeader("MX", "1");
-                searchMsg.setHeader("ST", target);
+                searchMsg.setHeader("ST", mTarget);
 
-                for (int i = 0; i < 3; i++) {
+                for (int i = 0; i < 3 && !this.isInterrupted(); i++) {
                     ssdpService.sendMulticast(searchMsg);
                     Thread.sleep(MSEARCH_PERIOD);
                 }
 
-                while (!this.isInterrupted()) {
+                if (mCallbackContext != null && !silent) {
+                    PluginResult result = new PluginResult(PluginResult.Status.OK);
+                    mCallbackContext.sendPluginResult(result);
                 }
             } catch (IOException e) {
                 e.printStackTrace();
-                PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                result.setKeepCallback(true);
-                mSearchCallback.sendPluginResult(result);
+
+                if (mCallbackContext != null && !silent) {
+                    PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                    mCallbackContext.sendPluginResult(result);
+                }
             } catch (InterruptedException e) {
                 e.printStackTrace();
-                PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                result.setKeepCallback(true);
-                mSearchCallback.sendPluginResult(result);
+
+                if (mCallbackContext != null && !silent) {
+                    PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                    mCallbackContext.sendPluginResult(result);
+                }
             } finally {
                 if (ssdpService != null) {
                     ssdpService.close();
@@ -295,169 +304,37 @@ public class Ssdp extends CordovaPlugin {
         }
     }
 
-    private SsdpPacketListener searchPacketListener = new SsdpPacketListener() {
-        @Override
-        public void received(final DatagramPacket packet) {
-            if (packet == null || packet.getData() == null) {
-                return;
-            }
+    class AdvertiseConsumer implements Consumer<DatagramPacket> {
+        private final SsdpService mSsdpService;
+        private final String mTarget;
+        private final int mPort;
+        private final String mName;
+        private final String mUuid;
 
-            final String msgString = new String(packet.getData()).trim();
-            SsdpMessage message = null;
-            try {
-                message = SsdpMessage.toMessage(msgString);
-            } catch (IllegalArgumentException e) {
-                e.printStackTrace();
-                PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                result.setKeepCallback(true);
-                mSearchCallback.sendPluginResult(result);
-            }
-
-            if (message == null || !containsTarget(message)) {
-                return;
-            }
-
-            if (packet.getAddress() == null) {
-                return;
-            }
-
-            Log.d(TAG, "__________________");
-            if (packet.getAddress().getHostAddress() != null) {
-                final String addr = packet.getAddress().getHostAddress() + ":" + packet.getPort();
-                Log.d(TAG, addr);
-            }
-            Log.d(TAG, msgString);
-            Log.d(TAG, "__________________");
-
-            JSONObject item = new JSONObject();
-            try {
-                Device device = new Device(
-                        packet.getAddress().getHostAddress(),
-                        Integer.parseInt(message.getHeader("PORT")),
-                        message.getHeader("SERVER"),
-                        message.getHeader("USN"),
-                        message.getHeader("CACHE-CONTROL"),
-                        mReceiver.currentNetworkName);
-                item = device.toJSON();
-            } catch (JSONException e) {
-                e.printStackTrace();
-                PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                result.setKeepCallback(true);
-                mSearchCallback.sendPluginResult(result);
-            }
-
-            PluginResult result = new PluginResult(PluginResult.Status.OK, item);
-            result.setKeepCallback(true);
-
-            if (message.getType().equals(SsdpMessageType.RESPONSE)) {
-                deviceDiscoveredCallback.sendPluginResult(result);
-                return;
-            }
-
-            String nts = message.getHeader("NTS");
-
-            if (nts != null && nts.equals(SsdpNotificationType.ALIVE.getRepresentation())) {
-                deviceDiscoveredCallback.sendPluginResult(result);
-                return;
-            }
-
-            if (nts != null && nts.equals(SsdpNotificationType.BYEBYE.getRepresentation())) {
-                deviceGoneCallback.sendPluginResult(result);
-            }
+        AdvertiseConsumer(SsdpService ssdpService, String target, int port, String name, String uuid) {
+            mSsdpService = ssdpService;
+            mTarget = target;
+            mPort = port;
+            mName = name;
+            mUuid = uuid;
         }
-    };
 
-    class AdvertiseThread extends Thread {
         @Override
-        public void run() {
-            try {
-                if (ssdpService != null) {
-                    ssdpService.close();
-                }
+        public void accept(DatagramPacket packet) {
+            SsdpMessage message = parseMessage(packet);
 
-                NetworkInterface ni = getWifiNetworkInterface();
-                ssdpService = new SsdpService(ni, advertisePacketListener, false);
-
-                ssdpService.listen();
-
-                SsdpMessage aliveMsg = new SsdpMessage(SsdpMessageType.NOTIFY);
-                aliveMsg.setHeader("HOST", SSDP_ADDRESS);
-                aliveMsg.setHeader("CACHE-CONTROL", MAX_AGE);
-                aliveMsg.setHeader("NT", target);
-                aliveMsg.setHeader("NTS", SsdpNotificationType.ALIVE.getRepresentation());
-                aliveMsg.setHeader("SERVER", name);
-                aliveMsg.setHeader("USN", uuid);
-                aliveMsg.setHeader("PORT", String.valueOf(port));
-
-                while (!this.isInterrupted()) {
-                    ssdpService.sendMulticast(aliveMsg);
-                    Thread.sleep(ALIVE_PERIOD);
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
-                PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                result.setKeepCallback(true);
-                mAdvertiseCallback.sendPluginResult(result);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-                PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                result.setKeepCallback(true);
-                mAdvertiseCallback.sendPluginResult(result);
-            } finally {
-                if (ssdpService != null) {
-                    sendByeBye();
-                    ssdpService.close();
-                }
-            }
-        }
-    }
-
-    private void sendByeBye() {
-        SsdpMessage byebyeMsg = new SsdpMessage(SsdpMessageType.NOTIFY);
-        byebyeMsg.setHeader("HOST", SSDP_ADDRESS);
-        byebyeMsg.setHeader("NT", target);
-        byebyeMsg.setHeader("NTS", SsdpNotificationType.BYEBYE.getRepresentation());
-        byebyeMsg.setHeader("SERVER", name);
-        byebyeMsg.setHeader("USN", uuid);
-        byebyeMsg.setHeader("PORT", String.valueOf(port));
-        try {
-            ssdpService.sendMulticast(byebyeMsg);
-        } catch (IOException e) {
-            e.printStackTrace();
-            PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-            result.setKeepCallback(true);
-            mAdvertiseCallback.sendPluginResult(result);
-        }
-    }
-
-    private SsdpPacketListener advertisePacketListener = new SsdpPacketListener() {
-        @Override
-        public void received(final DatagramPacket packet) {
-            if (packet == null || packet.getData() == null) {
+            if (message == null || !containsTarget(message, mTarget)) {
                 return;
             }
 
-            final String msgString = new String(packet.getData()).trim();
-            SsdpMessage message = null;
-            try {
-                message = SsdpMessage.toMessage(msgString);
-            } catch (IllegalArgumentException e) {
-                e.printStackTrace();
-                PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                result.setKeepCallback(true);
-                mAdvertiseCallback.sendPluginResult(result);
-            }
-
-            if (message == null || !containsTarget(message)) {
-                return;
-            }
+            final InetAddress origin = packet.getAddress();
 
             Log.d(TAG, "message __________________");
-            if (packet.getAddress() != null) {
-                final String addr = packet.getAddress().getHostAddress() + ":" + packet.getPort();
+            if (origin != null) {
+                final String addr = origin.getHostAddress() + ":" + packet.getPort();
                 Log.d(TAG, addr);
             }
-            Log.d(TAG, msgString);
+            Log.d(TAG, message.toString());
 
             if (!message.getType().equals(SsdpMessageType.MSEARCH)) {
                 Log.d(TAG, "__________________");
@@ -468,23 +345,146 @@ public class Ssdp extends CordovaPlugin {
             SsdpMessage searchMsg = new SsdpMessage(SsdpMessageType.RESPONSE);
             searchMsg.setHeader("CACHE-CONTROL", MAX_AGE);
             searchMsg.setHeader("EXT", "");
-            searchMsg.setHeader("SERVER", name);
-            searchMsg.setHeader("ST", target);
-            searchMsg.setHeader("USN", uuid);
-            searchMsg.setHeader("PORT", String.valueOf(port));
+            searchMsg.setHeader("SERVER", mName);
+            searchMsg.setHeader("ST", mTarget);
+            searchMsg.setHeader("USN", mUuid);
+            searchMsg.setHeader("PORT", String.valueOf(mPort));
             Log.d(TAG, searchMsg.toString());
             Log.d(TAG, "__________________");
 
             try {
-                ssdpService.sendUnicast(searchMsg, packet);
+                mSsdpService.sendUnicast(searchMsg, packet);
+            } catch (IOException ignored) {}
+        }
+    }
+
+    class AdvertiseThread extends RestartableThread {
+        private final String mTarget;
+        private final int mPort;
+        private final String mName;
+        private final String mUuid;
+        private final CallbackContext mCallbackContext;
+
+        private boolean silent = false;
+
+        AdvertiseThread(String target, int port, String name, String uuid, final CallbackContext callbackContext) {
+            mTarget = target;
+            mPort = port;
+            mName = name;
+            mUuid = uuid;
+            mCallbackContext = callbackContext;
+        }
+
+        @Override
+        public void restart() {
+            silent = true;
+
+            interrupt();
+
+            silent = false;
+            start();
+        }
+
+        @Override
+        public void run() {
+            SsdpService ssdpService = null;
+            try {
+                NetworkInterface ni = getWifiNetworkInterface();
+                ssdpService = new SsdpService(ni, false);
+                ssdpService.setMulticastConsumer(new AdvertiseConsumer(ssdpService, mTarget, mPort, mName, mUuid));
+
+                ssdpService.listen();
+
+                SsdpMessage aliveMsg = new SsdpMessage(SsdpMessageType.NOTIFY);
+                aliveMsg.setHeader("HOST", SSDP_ADDRESS);
+                aliveMsg.setHeader("CACHE-CONTROL", MAX_AGE);
+                aliveMsg.setHeader("NT", mTarget);
+                aliveMsg.setHeader("NTS", SsdpNotificationType.ALIVE.getRepresentation());
+                aliveMsg.setHeader("SERVER", mName);
+                aliveMsg.setHeader("USN", mUuid);
+                aliveMsg.setHeader("PORT", String.valueOf(mPort));
+
+                while (!this.isInterrupted()) {
+                    ssdpService.sendMulticast(aliveMsg);
+                    Thread.sleep(ALIVE_PERIOD);
+                }
+
+                if (mCallbackContext != null && !silent) {
+                    PluginResult result = new PluginResult(PluginResult.Status.OK);
+                    mCallbackContext.sendPluginResult(result);
+                }
             } catch (IOException e) {
                 e.printStackTrace();
-                PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                result.setKeepCallback(true);
-                mAdvertiseCallback.sendPluginResult(result);
+
+                if (mCallbackContext != null && !silent) {
+                    PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                    mCallbackContext.sendPluginResult(result);
+                }
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+
+                if (mCallbackContext != null && !silent) {
+                    PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                    mCallbackContext.sendPluginResult(result);
+                }
+            } finally {
+                if (ssdpService != null && !silent) {
+                    SsdpMessage byebyeMsg = new SsdpMessage(SsdpMessageType.NOTIFY);
+                    byebyeMsg.setHeader("HOST", SSDP_ADDRESS);
+                    byebyeMsg.setHeader("NT", mTarget);
+                    byebyeMsg.setHeader("NTS", SsdpNotificationType.BYEBYE.getRepresentation());
+                    byebyeMsg.setHeader("SERVER", mName);
+                    byebyeMsg.setHeader("USN", mUuid);
+                    byebyeMsg.setHeader("PORT", String.valueOf(mPort));
+
+                    try {
+                        ssdpService.sendMulticast(byebyeMsg);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+
+                    ssdpService.close();
+                }
             }
-
         }
-    };
+    }
 
+    class NetworkChangeConsumer implements Consumer<NetworkInfo> {
+        private final int NO_NETWORK = -1;
+
+        private int mLastType = NO_NETWORK;
+
+        @Override
+        public void accept(NetworkInfo networkInfo) {
+             final int currentType = networkInfo != null ? networkInfo.getType() : NO_NETWORK;
+
+             if (mLastType != currentType) {
+                 String log;
+                 if (networkInfo != null) {
+                     String type = NetworkUtil.getConnectivityTypeString(networkInfo);
+                     String status = NetworkUtil.getConnectivityStatusString(networkInfo);
+                     String extra = networkInfo.getExtraInfo();
+
+                     log = status + " " + type + " " + extra;
+
+                     if (NetworkUtil.isWiFi(currentType)) {
+                         mLastNetworkId = extra;
+                         thread.restart();
+
+                         PluginResult result = new PluginResult(PluginResult.Status.OK, mLastNetworkId);
+                         result.setKeepCallback(true);
+                         mNetworkGoneCallback.sendPluginResult(result);
+                     } else {
+                         thread.interrupt();
+                     }
+                 } else {
+                     log = "Disconnected";
+                     thread.interrupt();
+                 }
+
+                 mLastType = currentType;
+                 Log.d(TAG, log);
+             }
+        }
+    }
 }

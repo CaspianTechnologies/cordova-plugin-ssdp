@@ -1,5 +1,8 @@
 package capital.spatium.plugin.ssdp;
 
+import android.annotation.TargetApi;
+import android.os.Build;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -9,19 +12,18 @@ import java.net.MulticastSocket;
 import java.net.NetworkInterface;
 import java.net.ServerSocket;
 import java.net.SocketAddress;
-import java.net.SocketException;
 import java.nio.channels.UnsupportedAddressTypeException;
 
+@TargetApi(Build.VERSION_CODES.KITKAT)
 public class SsdpChannel implements Closeable, AutoCloseable {
     public static final InetSocketAddress SSDP_MCAST_ADDRESS = new InetSocketAddress(
             "239.255.255.250",
             1900);
-    private int SSPD_UCAST_PORT = 0;
 
     private final DatagramSocket unicastSocket;
     private final MulticastSocket multicastSocket;
 
-    public SsdpChannel(NetworkInterface networkIf) throws IOException, UnsupportedAddressTypeException {
+    SsdpChannel(NetworkInterface networkIf) throws IOException, UnsupportedAddressTypeException {
         this.unicastSocket = createUnicastSocket();
         this.multicastSocket = createMulticastSocket(networkIf);
     }
@@ -63,10 +65,9 @@ public class SsdpChannel implements Closeable, AutoCloseable {
     private DatagramSocket createUnicastSocket() {
         try {
             ServerSocket s = new ServerSocket(0);
-            SSPD_UCAST_PORT = s.getLocalPort();
+            int randomPort = s.getLocalPort();
             s.close();
-            DatagramSocket socket = new DatagramSocket(SSPD_UCAST_PORT);
-            return socket;
+            return new DatagramSocket(randomPort);
         } catch (Exception e) {
             e.printStackTrace();
             return null;

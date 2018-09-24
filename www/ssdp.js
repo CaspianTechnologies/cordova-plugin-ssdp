@@ -35,7 +35,7 @@ function unregisterDevice(device) {
     return;
   }
 
-  devices.delete(registeredDevice.usn)
+  devices.delete(registeredDevice.usn);
   
   if (deviceGoneClientCallback) {
     deviceGoneClientCallback(registeredDevice);
@@ -78,7 +78,7 @@ exports.startSearching = function(target) {
     exec(unregisterDevicesFromGoneNetwork, null, "SSDP", "setNetworkGoneCallback", [unregisterDevicesFromGoneNetwork]);
     exec(success, error, "SSDP", "startSearching", [target]);
   });
-}
+};
 
 exports.startAdvertising = function(target, port) {
   return new Promise(function(success, error) {
@@ -86,7 +86,7 @@ exports.startAdvertising = function(target, port) {
     const usn = device.uuid;
     exec(success, error, "SSDP", "startAdvertising", [target, port, name, usn]);
   });
-}
+};
 
 exports.stop = function() {
   return new Promise(function(success, error) {
@@ -96,18 +96,18 @@ exports.stop = function() {
     }
     exec(success, error, "SSDP", "stop", []);
   });
-}
+};
 
 exports.reset = function() {
   devices.clear();
-}
+};
 
 exports.setDeviceDiscoveredCallback = function(callback) {
   deviceDiscoveredClientCallback = callback;
   exec(registerDevice, null, "SSDP", "setDeviceDiscoveredCallback", [registerDevice]);
-}
+};
 
 exports.setDeviceGoneCallback = function(callback) {
   deviceGoneClientCallback = callback;
   exec(unregisterDevice, null, "SSDP", "setDeviceGoneCallback", [unregisterDevice]);
-}
+};

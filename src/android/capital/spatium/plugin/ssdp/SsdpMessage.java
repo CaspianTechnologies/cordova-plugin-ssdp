@@ -1,11 +1,17 @@
 package capital.spatium.plugin.ssdp;
 
+import android.annotation.TargetApi;
+import android.os.Build;
+
 import java.io.UnsupportedEncodingException;
+import java.net.InetAddress;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+
+@TargetApi(Build.VERSION_CODES.KITKAT)
 
 public class SsdpMessage {
     private static final String EOL = "\r\n";
@@ -13,7 +19,7 @@ public class SsdpMessage {
     private final SsdpMessageType type;
     private final Map<String, String> headers = new LinkedHashMap<String, String>();
 
-    public SsdpMessage(SsdpMessageType type) {
+    SsdpMessage(SsdpMessageType type) {
         this.type = type;
     }
 
@@ -25,17 +31,16 @@ public class SsdpMessage {
         return Collections.unmodifiableMap(headers);
     }
 
+    public SsdpNotificationType getNotificationType() {
+        return SsdpNotificationType.fromRepresentation(headers.get(SsdpCommonHeadersType.NTS.name()));
+    }
+
     public String getHeader(String name) {
         return headers.get(name);
     }
 
-    public SsdpMessage setHeader(String name, String value) {
+    public void setHeader(String name, String value) {
         headers.put(name.toUpperCase(), value);
-        return this;
-    }
-
-    public SsdpNotificationType getNotificationType() {
-        return SsdpNotificationType.fromRepresentation(headers.get(SsdpCommonHeadersType.NTS.name()));
     }
 
     public static SsdpMessage toMessage(String raw) throws IllegalArgumentException {

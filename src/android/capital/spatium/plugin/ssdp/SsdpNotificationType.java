@@ -2,6 +2,7 @@ package capital.spatium.plugin.ssdp;
 
 
 public enum SsdpNotificationType {
+
     ALIVE("ssdp:alive"),
     BYEBYE("ssdp:byebye"),
     UPDATE("ssdp:update");
