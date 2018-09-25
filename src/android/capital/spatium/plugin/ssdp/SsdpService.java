@@ -26,11 +26,11 @@ public class SsdpService implements Closeable, AutoCloseable {
         NetworkInterface networkInterface,
         boolean listenUnicast
     ) throws IOException, UnsupportedAddressTypeException {
-        mChannel = SsdpService.buildChannel(networkInterface);
+        mChannel = new SsdpChannel();
 
-        if (mChannel == null) {
-            throw new IOException("Channel is null");
-        }
+        try {
+            mChannel.joinGroup(networkInterface);
+        } catch (IOException ignored) {}
 
         mMulticastThread = new Thread(new MulticastReceiver(mChannel), "SSDP_multicast_receiver");
         mUnicastThread =
@@ -57,6 +57,10 @@ public class SsdpService implements Closeable, AutoCloseable {
         }
     }
 
+    public void joinGroup(NetworkInterface networkInterface) throws IOException {
+        this.mChannel.joinGroup(networkInterface);
+    }
+
     @Override
     public void close() {
         mChannel.close();
@@ -64,18 +68,6 @@ public class SsdpService implements Closeable, AutoCloseable {
         if (mUnicastThread != null) {
             mUnicastThread.interrupt();
         }
-    }
-
-    private static SsdpChannel buildChannel(NetworkInterface networkInterface) {
-        SsdpChannel channel = null;
-        try {
-            channel = new SsdpChannel(networkInterface);
-        } catch (IOException e) {
-            e.printStackTrace();
-        } catch (UnsupportedAddressTypeException e) {
-            e.printStackTrace();
-        }
-        return channel;
     }
 
     public void sendMulticast(SsdpMessage message) throws IOException {

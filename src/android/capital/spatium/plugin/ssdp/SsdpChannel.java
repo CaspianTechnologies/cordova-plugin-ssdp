@@ -19,9 +19,9 @@ public class SsdpChannel implements Closeable, AutoCloseable {
     private final DatagramSocket unicastSocket;
     private final MulticastSocket multicastSocket;
 
-    SsdpChannel(NetworkInterface networkIf) throws IOException, UnsupportedAddressTypeException {
+    SsdpChannel() throws IOException, UnsupportedAddressTypeException {
         this.unicastSocket = createUnicastSocket();
-        this.multicastSocket = createMulticastSocket(networkIf);
+        this.multicastSocket = createMulticastSocket();
     }
 
     public void sendMulticast(SsdpMessage message) throws IOException {
@@ -41,6 +41,10 @@ public class SsdpChannel implements Closeable, AutoCloseable {
 
     public void receiveUnicast(DatagramPacket msgPacket) throws IOException {
         unicastSocket.receive(msgPacket);
+    }
+
+    public void joinGroup(NetworkInterface networkIf) throws IOException {
+        this.multicastSocket.joinGroup(SSDP_MCAST_ADDRESS, networkIf);
     }
 
     public void close() {
@@ -70,11 +74,8 @@ public class SsdpChannel implements Closeable, AutoCloseable {
         }
     }
 
-    private MulticastSocket createMulticastSocket(NetworkInterface networkIf)
-            throws IOException {
-        MulticastSocket socket = new MulticastSocket(SSDP_MCAST_ADDRESS.getPort());
-        socket.joinGroup(SSDP_MCAST_ADDRESS, networkIf);
-        return socket;
+    private MulticastSocket createMulticastSocket() throws IOException {
+        return new MulticastSocket(SSDP_MCAST_ADDRESS.getPort());
     }
 
 }

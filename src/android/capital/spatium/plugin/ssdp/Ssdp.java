@@ -23,7 +23,7 @@ import capital.spatium.plugin.ssdp.network.NetworkChangeReceiver;
 import capital.spatium.plugin.ssdp.network.NetworkUtil;
 
 public class Ssdp extends CordovaPlugin {
-    private Thread thread;
+    private MulticastThread thread;
 
     private CallbackContext deviceDiscoveredCallback = null;
     private CallbackContext deviceGoneCallback = null;
@@ -90,29 +90,39 @@ public class Ssdp extends CordovaPlugin {
         super.onDestroy();
     }
 
-    private void search(JSONArray args, final CallbackContext callbackContext) {
-        String target = args.optString(0);
+    private void search(JSONArray args, final CallbackContext callbackContext) throws JSONException {
+        String target = args.getString(0);
 
         if (thread != null && thread.isAlive()) {
             thread.interrupt();
         }
 
-        thread = new SearchThread(target, callbackContext);
+        thread = new SearchThread(target);
         thread.start();
+
+        if (callbackContext != null) {
+            PluginResult result = new PluginResult(PluginResult.Status.OK);
+            callbackContext.sendPluginResult(result);
+        }
     }
 
-    private void advertise(JSONArray args, final CallbackContext callbackContext) {
-        String target = args.optString(0);
-        int port = args.optInt(1);
-        String name = args.optString(2);
-        String uuid = args.optString(3);
+    private void advertise(JSONArray args, final CallbackContext callbackContext) throws JSONException {
+        String target = args.getString(0);
+        int port = args.getInt(1);
+        String name = args.getString(2);
+        String uuid = args.getString(3);
 
         if (thread != null && thread.isAlive()) {
             thread.interrupt();
         }
 
-        thread = new AdvertiseThread(target, port, name, uuid, callbackContext);
+        thread = new AdvertiseThread(target, port, name, uuid);
         thread.start();
+
+        if (callbackContext != null) {
+            PluginResult result = new PluginResult(PluginResult.Status.OK);
+            callbackContext.sendPluginResult(result);
+        }
     }
 
     private void stop(JSONArray args, final CallbackContext callbackContext) {
@@ -166,7 +176,7 @@ public class Ssdp extends CordovaPlugin {
         return SsdpMessage.toMessage(msgString);
     }
 
-    class SearchConsumer implements Consumer<DatagramPacket> {
+    private class SearchConsumer implements Consumer<DatagramPacket> {
         private final String mTarget;
 
         SearchConsumer(String target) {
@@ -225,28 +235,15 @@ public class Ssdp extends CordovaPlugin {
         }
     }
 
-    private class SearchThread extends Thread {
+    private class SearchThread extends MulticastThread {
         private final String mTarget;
-        private final CallbackContext mCallbackContext;
 
-        private boolean silent = false;
-
-        SearchThread(String target, final CallbackContext callbackContext) {
+        SearchThread(String target) {
             mTarget = target;
-            mCallbackContext = callbackContext;
         }
 
-        @Override
-        public void run() {
-            SsdpService ssdpService = null;
+        public void search() {
             try {
-                NetworkInterface ni = getWifiNetworkInterface();
-                ssdpService = new SsdpService(ni, true);
-                ssdpService.setMulticastConsumer(new SearchConsumer(mTarget));
-                ssdpService.setUnicastConsumer(new SearchConsumer(mTarget));
-
-                ssdpService.listen();
-
                 SsdpMessage searchMsg = new SsdpMessage(SsdpMessageType.MSEARCH);
                 searchMsg.setHeader("HOST", SSDP_ADDRESS);
                 searchMsg.setHeader("MAN", "\"ssdp:discover\"");
@@ -254,24 +251,42 @@ public class Ssdp extends CordovaPlugin {
                 searchMsg.setHeader("ST", mTarget);
 
                 for (int i = 0; i < 3 && !this.isInterrupted(); i++) {
-                    ssdpService.sendMulticast(searchMsg);
-                    Thread.sleep(MSEARCH_PERIOD);
+                    mSsdpService.sendMulticast(searchMsg);
+                    try {
+                        Thread.sleep(MSEARCH_PERIOD);
+                    } catch (InterruptedException e) {
+                        this.interrupt();
+                    }
                 }
-
-                if (mCallbackContext != null && !silent) {
-                    PluginResult result = new PluginResult(PluginResult.Status.OK);
-                    mCallbackContext.sendPluginResult(result);
-                }
-            } catch (IOException | InterruptedException e) {
+            } catch (IOException e) {
                 e.printStackTrace();
+            }
+        }
 
-                if (mCallbackContext != null && !silent) {
-                    PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                    mCallbackContext.sendPluginResult(result);
+        @Override
+        public void run() {
+            try {
+                NetworkInterface ni = getWifiNetworkInterface();
+                mSsdpService = new SsdpService(ni, true);
+                mSsdpService.setMulticastConsumer(new SearchConsumer(mTarget));
+                mSsdpService.setUnicastConsumer(new SearchConsumer(mTarget));
+
+                mSsdpService.listen();
+
+                search();
+
+                while (!this.isInterrupted()) {
+                    try {
+                        Thread.sleep(MSEARCH_PERIOD);
+                    } catch (InterruptedException e) {
+                        this.interrupt();
+                    }
                 }
+            } catch (IOException e) {
+                e.printStackTrace();
             } finally {
-                if (ssdpService != null) {
-                    ssdpService.close();
+                if (mSsdpService != null) {
+                    mSsdpService.close();
                 }
             }
         }
@@ -331,30 +346,27 @@ public class Ssdp extends CordovaPlugin {
         }
     }
 
-    private class AdvertiseThread extends Thread {
+    private class AdvertiseThread extends MulticastThread {
         private final String mTarget;
         private final int mPort;
         private final String mName;
         private final String mUuid;
-        private final CallbackContext mCallbackContext;
 
-        AdvertiseThread(String target, int port, String name, String uuid, final CallbackContext callbackContext) {
+        AdvertiseThread(String target, int port, String name, String uuid) {
             mTarget = target;
             mPort = port;
             mName = name;
             mUuid = uuid;
-            mCallbackContext = callbackContext;
         }
 
         @Override
         public void run() {
-            SsdpService ssdpService = null;
             try {
                 NetworkInterface ni = getWifiNetworkInterface();
-                ssdpService = new SsdpService(ni, false);
-                ssdpService.setMulticastConsumer(new AdvertiseConsumer(ssdpService, mTarget, mPort, mName, mUuid));
+                mSsdpService = new SsdpService(ni, false);
+                mSsdpService.setMulticastConsumer(new AdvertiseConsumer(mSsdpService, mTarget, mPort, mName, mUuid));
 
-                ssdpService.listen();
+                mSsdpService.listen();
 
                 SsdpMessage aliveMsg = new SsdpMessage(SsdpMessageType.NOTIFY);
                 aliveMsg.setHeader("HOST", SSDP_ADDRESS);
@@ -366,27 +378,20 @@ public class Ssdp extends CordovaPlugin {
                 aliveMsg.setHeader("PORT", String.valueOf(mPort));
 
                 while (!this.isInterrupted()) {
-                    ssdpService.sendMulticast(aliveMsg);
+                    try {
+                        mSsdpService.sendMulticast(aliveMsg);
+                    } catch (IOException ignored) {}
+
                     try {
                         Thread.sleep(ALIVE_PERIOD);
                     } catch (InterruptedException ignored) {
                         this.interrupt();
                     }
                 }
-
-                if (mCallbackContext != null) {
-                    PluginResult result = new PluginResult(PluginResult.Status.OK);
-                    mCallbackContext.sendPluginResult(result);
-                }
             } catch (IOException e) {
                 e.printStackTrace();
-
-                if (mCallbackContext != null) {
-                    PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                    mCallbackContext.sendPluginResult(result);
-                }
             } finally {
-                if (ssdpService != null) {
+                if (mSsdpService != null) {
                     SsdpMessage byebyeMsg = new SsdpMessage(SsdpMessageType.NOTIFY);
                     byebyeMsg.setHeader("HOST", SSDP_ADDRESS);
                     byebyeMsg.setHeader("NT", mTarget);
@@ -396,12 +401,12 @@ public class Ssdp extends CordovaPlugin {
                     byebyeMsg.setHeader("PORT", String.valueOf(mPort));
 
                     try {
-                        ssdpService.sendMulticast(byebyeMsg);
+                        mSsdpService.sendMulticast(byebyeMsg);
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
 
-                    ssdpService.close();
+                    mSsdpService.close();
                 }
             }
         }
@@ -423,6 +428,28 @@ public class Ssdp extends CordovaPlugin {
             }
 
             mLastNetworkInfo = networkInfo;
+
+            if (mLastNetworkInfo != null && NetworkUtil.isWiFi(mLastNetworkInfo.getType())) {
+                try {
+                    thread.joinGroup();
+                    if (thread instanceof SearchThread) {
+                        ((SearchThread) thread).search();
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    private class MulticastThread extends Thread {
+        SsdpService mSsdpService = null;
+
+        public void joinGroup() throws IOException {
+            if (mSsdpService != null) {
+                NetworkInterface ni = getWifiNetworkInterface();
+                mSsdpService.joinGroup(ni);
+            }
         }
     }
 }
