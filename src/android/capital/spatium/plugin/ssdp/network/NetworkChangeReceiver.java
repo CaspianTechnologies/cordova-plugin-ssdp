@@ -5,6 +5,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.NetworkInfo;
+import android.net.wifi.WifiManager;
+import android.provider.Settings;
+
+import java.lang.reflect.Method;
 
 import capital.spatium.plugin.ssdp.Consumer;
 
@@ -32,6 +36,38 @@ public class NetworkChangeReceiver extends BroadcastReceiver {
                 mNetworkChangeConsumer.accept(mCurrentNetworkInfo);
             }
         }
+    }
+
+    public boolean isHotspotEnabled() {
+        boolean isWifiApEnabled = false;
+        WifiManager wifi = (WifiManager) mContext.getApplicationContext()
+                .getSystemService(Context.WIFI_SERVICE);
+        Method[] wmMethods = wifi.getClass().getDeclaredMethods();
+        for (Method method: wmMethods) {
+            try {
+                if (method.getName().equals("isWifiApEnabled")) {
+                    isWifiApEnabled = (boolean) method.invoke(wifi);
+                    return isWifiApEnabled;
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+                return isWifiApEnabled;
+            }
+        }
+        return isWifiApEnabled;
+    }
+
+    public String getNetworkId() {
+        if (isHotspotEnabled()) {
+            String androidId = Settings.Secure.getString(mContext.getContentResolver(), Settings.Secure.ANDROID_ID);
+            return "hotspot-" + androidId;
+        } else {
+            NetworkInfo networkInfo = NetworkUtil.getNetworkInfo(mContext);
+            if (networkInfo != null) {
+                return networkInfo.getExtraInfo();
+            }
+        }
+        return "unknown";
     }
 
     public NetworkInfo getCurrentNetworkInfo() {

@@ -1,9 +1,6 @@
 package capital.spatium.plugin.ssdp;
 
-import android.content.Context;
 import android.net.NetworkInfo;
-import android.net.wifi.WifiInfo;
-import android.net.wifi.WifiManager;
 import android.util.Log;
 
 import org.apache.cordova.CallbackContext;
@@ -18,6 +15,8 @@ import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
+import java.net.SocketException;
+import java.util.Enumeration;
 
 import capital.spatium.plugin.ssdp.network.NetworkChangeReceiver;
 import capital.spatium.plugin.ssdp.network.NetworkUtil;
@@ -158,13 +157,17 @@ public class Ssdp extends CordovaPlugin {
                message.getHeader("NT").equals(target);
     }
 
-    private NetworkInterface getWifiNetworkInterface() throws IOException {
-        Context context = this.cordova.getActivity().getApplicationContext();
-        WifiManager wifiMgr = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
-        WifiInfo wifiInfo = wifiMgr.getConnectionInfo();
-        int ip = wifiInfo.getIpAddress();
-        byte[] b = convertIpAddress(ip);
-        return NetworkInterface.getByInetAddress(InetAddress.getByAddress(b));
+    private NetworkInterface getWifiNetworkInterface() throws SocketException {
+        Enumeration<NetworkInterface> enumeration = NetworkInterface.getNetworkInterfaces();
+        NetworkInterface wlan0;
+
+        while (enumeration.hasMoreElements()) {
+            wlan0 = enumeration.nextElement();
+            if (wlan0.getName().equals("wlan0")) {
+                return wlan0;
+            }
+        }
+        return null;
     }
 
     private SsdpMessage parseMessage(DatagramPacket packet) {
@@ -216,7 +219,7 @@ public class Ssdp extends CordovaPlugin {
                         message.getHeader("SERVER"),
                         message.getHeader("USN"),
                         message.getHeader("CACHE-CONTROL"),
-                        mReceiver.getCurrentNetworkInfo().getExtraInfo()
+                        mReceiver.getNetworkId()
                 );
 
                 try {
