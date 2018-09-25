@@ -27,15 +27,13 @@
                      target-dir="src/capital/spatium/plugin/ssdp"/>
         <source-file src="src/android/capital/spatium/plugin/ssdp/SsdpCommonHeadersType.java"
                      target-dir="src/capital/spatium/plugin/ssdp"/>
-        <source-file src="src/android/capital/spatium/plugin/ssdp/SsdpDeviceType.java"
-                     target-dir="src/capital/spatium/plugin/ssdp"/>
         <source-file src="src/android/capital/spatium/plugin/ssdp/SsdpMessage.java"
                      target-dir="src/capital/spatium/plugin/ssdp"/>
         <source-file src="src/android/capital/spatium/plugin/ssdp/SsdpMessageType.java"
                      target-dir="src/capital/spatium/plugin/ssdp"/>
         <source-file src="src/android/capital/spatium/plugin/ssdp/SsdpNotificationType.java"
                      target-dir="src/capital/spatium/plugin/ssdp"/>
-        <source-file src="src/android/capital/spatium/plugin/ssdp/SsdpPacketListener.java"
+        <source-file src="src/android/capital/spatium/plugin/ssdp/Consumer.java"
                      target-dir="src/capital/spatium/plugin/ssdp"/>
         <source-file src="src/android/capital/spatium/plugin/ssdp/SsdpService.java"
                      target-dir="src/capital/spatium/plugin/ssdp"/>
