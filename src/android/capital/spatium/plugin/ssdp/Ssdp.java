@@ -25,8 +25,8 @@ import capital.spatium.plugin.ssdp.network.NetworkUtil;
 public class Ssdp extends CordovaPlugin {
     private MulticastThread thread;
 
-    private CallbackContext deviceDiscoveredCallback = null;
-    private CallbackContext deviceGoneCallback = null;
+    private CallbackContext mDeviceDiscoveredCallback = null;
+    private CallbackContext mDeviceGoneCallback = null;
     private CallbackContext mNetworkGoneCallback = null;
 
     private static final String MAX_AGE = "max-age = 30";
@@ -135,11 +135,11 @@ public class Ssdp extends CordovaPlugin {
     }
 
     private void setDeviceDiscoveredCallback(final CallbackContext callbackContext) {
-        deviceDiscoveredCallback = callbackContext;
+        mDeviceDiscoveredCallback = callbackContext;
     }
 
     private void setDeviceGoneCallback(final CallbackContext callbackContext) {
-        deviceGoneCallback = callbackContext;
+        mDeviceGoneCallback = callbackContext;
     }
 
     private void setNetworkGoneCallback(final CallbackContext callbackContext) {
@@ -185,53 +185,67 @@ public class Ssdp extends CordovaPlugin {
 
         @Override
         public void accept(DatagramPacket packet) {
-            SsdpMessage message = parseMessage(packet);
-
-            if (message == null || !containsTarget(message, mTarget)) {
-                return;
-            }
-
-            final InetAddress origin = packet.getAddress();
-
-            if (origin == null) {
-                return;
-            }
-
-            Log.d(TAG, "__________________");
-            if (origin.getHostAddress() != null) {
-                final String addr = origin.getHostAddress();
-                Log.d(TAG, addr);
-            }
-            Log.d(TAG, message.toString());
-            Log.d(TAG, "__________________");
-
-            Device device = new Device(
-                origin.getHostAddress(),
-                Integer.parseInt(message.getHeader("PORT")),
-                message.getHeader("SERVER"),
-                message.getHeader("USN"),
-                message.getHeader("CACHE-CONTROL"),
-                mReceiver.getCurrentNetworkInfo().getExtraInfo()
-            );
-
             try {
-                PluginResult result = new PluginResult(PluginResult.Status.OK, device.toJSON());
-                result.setKeepCallback(true);
+                SsdpMessage message = parseMessage(packet);
 
-                if (message.getType().equals(SsdpMessageType.RESPONSE)) {
-                    deviceDiscoveredCallback.sendPluginResult(result);
-                } else {
-                    String nts = message.getHeader("NTS");
-
-                    if (nts != null && nts.equals(SsdpNotificationType.ALIVE.getRepresentation())) {
-                        deviceDiscoveredCallback.sendPluginResult(result);
-                    } else if (nts != null && nts.equals(SsdpNotificationType.BYEBYE.getRepresentation())) {
-                        deviceGoneCallback.sendPluginResult(result);
-                    }
+                if (message == null || !containsTarget(message, mTarget)) {
+                    return;
                 }
 
+                if (message.getType().equals(SsdpMessageType.MSEARCH)) {
+                    return;
+                }
 
-            } catch (JSONException ignored) {}
+                final InetAddress origin = packet.getAddress();
+
+                if (origin == null) {
+                    return;
+                }
+
+                Log.d(TAG, "__________________");
+                if (origin.getHostAddress() != null) {
+                    final String addr = origin.getHostAddress();
+                    Log.d(TAG, addr);
+                }
+                Log.d(TAG, message.toString());
+                Log.d(TAG, "__________________");
+
+                Device device = new Device(
+                        origin.getHostAddress(),
+                        Integer.parseInt(message.getHeader("PORT")),
+                        message.getHeader("SERVER"),
+                        message.getHeader("USN"),
+                        message.getHeader("CACHE-CONTROL"),
+                        mReceiver.getCurrentNetworkInfo().getExtraInfo()
+                );
+
+                try {
+                    PluginResult result = new PluginResult(PluginResult.Status.OK, device.toJSON());
+                    result.setKeepCallback(true);
+
+                    if (message.getType().equals(SsdpMessageType.RESPONSE)) {
+                        if (mDeviceDiscoveredCallback != null) {
+                            mDeviceDiscoveredCallback.sendPluginResult(result);
+                        }
+                    } else {
+                        String nts = message.getHeader("NTS");
+
+                        if (nts != null && nts.equals(SsdpNotificationType.ALIVE.getRepresentation())) {
+                            if (mDeviceDiscoveredCallback != null) {
+                                mDeviceDiscoveredCallback.sendPluginResult(result);
+                            }
+                        } else if (nts != null && nts.equals(SsdpNotificationType.BYEBYE.getRepresentation())) {
+                            if (mDeviceGoneCallback != null) {
+                                mDeviceGoneCallback.sendPluginResult(result);
+                            }
+                        }
+                    }
+
+
+                } catch (JSONException ignored) {}
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
     }
 
