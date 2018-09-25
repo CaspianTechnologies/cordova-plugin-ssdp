@@ -1,17 +1,11 @@
 package capital.spatium.plugin.ssdp;
 
-import android.annotation.TargetApi;
-
-import android.os.Build;
-
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.NetworkInterface;
 import java.nio.channels.UnsupportedAddressTypeException;
-import java.util.function.Consumer;
 
-@TargetApi(Build.VERSION_CODES.N)
 public class SsdpService implements Closeable, AutoCloseable {
     private final SsdpChannel mChannel;
     private final Thread mMulticastThread;
@@ -106,12 +100,12 @@ public class SsdpService implements Closeable, AutoCloseable {
                 DatagramPacket msgPacket = new DatagramPacket(buf, buf.length);
                 try {
                     mChannel.receiveMulticast(msgPacket);
+
+                    if (mMulticastConsumer != null) {
+                        mMulticastConsumer.accept(msgPacket);
+                    }
                 } catch (IOException e) {
                     e.printStackTrace();
-                }
-
-                if (mMulticastConsumer != null) {
-                    mMulticastConsumer.accept(msgPacket);
                 }
             }
         }
@@ -131,12 +125,12 @@ public class SsdpService implements Closeable, AutoCloseable {
                 DatagramPacket msgPacket = new DatagramPacket(buf, buf.length);
                 try {
                     mChannel.receiveUnicast(msgPacket);
+
+                    if (mUnicastConsumer != null) {
+                        mUnicastConsumer.accept(msgPacket);
+                    }
                 } catch (IOException e) {
                     e.printStackTrace();
-                }
-
-                if (mUnicastConsumer != null) {
-                    mUnicastConsumer.accept(msgPacket);
                 }
             }
         }

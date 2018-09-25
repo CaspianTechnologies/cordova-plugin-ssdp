@@ -8,9 +8,15 @@ public class NetworkUtil {
 
     public static NetworkInfo getNetworkInfo(Context context) {
         ConnectivityManager connectivityManager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
-        NetworkInfo activeNetworkInfo = connectivityManager.getActiveNetworkInfo();
 
-        return activeNetworkInfo;
+        return connectivityManager != null ? connectivityManager.getActiveNetworkInfo() : null;
+    }
+
+    public static boolean equal(NetworkInfo x, NetworkInfo y) {
+        return (x != null) == (y != null) &&
+               ((x == null) ||
+                (x.getType() == y.getType() && x.getExtraInfo().equals(y.getExtraInfo()))
+               );
     }
 
     public static boolean isWiFi(int type){

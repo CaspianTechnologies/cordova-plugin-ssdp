@@ -1,8 +1,5 @@
 package capital.spatium.plugin.ssdp;
 
-import android.annotation.TargetApi;
-import android.os.Build;
-
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -14,7 +11,6 @@ import java.net.ServerSocket;
 import java.net.SocketAddress;
 import java.nio.channels.UnsupportedAddressTypeException;
 
-@TargetApi(Build.VERSION_CODES.KITKAT)
 public class SsdpChannel implements Closeable, AutoCloseable {
     public static final InetSocketAddress SSDP_MCAST_ADDRESS = new InetSocketAddress(
             "239.255.255.250",

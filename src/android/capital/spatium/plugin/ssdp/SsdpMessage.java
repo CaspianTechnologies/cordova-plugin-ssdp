@@ -1,17 +1,11 @@
 package capital.spatium.plugin.ssdp;
 
-import android.annotation.TargetApi;
-import android.os.Build;
-
 import java.io.UnsupportedEncodingException;
-import java.net.InetAddress;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
-
-@TargetApi(Build.VERSION_CODES.KITKAT)
 
 public class SsdpMessage {
     private static final String EOL = "\r\n";

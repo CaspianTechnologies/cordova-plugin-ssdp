@@ -1,11 +1,9 @@
 package capital.spatium.plugin.ssdp;
 
-import android.annotation.TargetApi;
 import android.content.Context;
 import android.net.NetworkInfo;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
-import android.os.Build;
 import android.util.Log;
 
 import org.apache.cordova.CallbackContext;
@@ -20,19 +18,12 @@ import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
-import java.util.function.Consumer;
 
 import capital.spatium.plugin.ssdp.network.NetworkChangeReceiver;
 import capital.spatium.plugin.ssdp.network.NetworkUtil;
 
-@TargetApi(Build.VERSION_CODES.N)
-
 public class Ssdp extends CordovaPlugin {
-    abstract class RestartableThread extends Thread {
-        abstract void restart();
-    }
-
-    private RestartableThread thread;
+    private Thread thread;
 
     private CallbackContext deviceDiscoveredCallback = null;
     private CallbackContext deviceGoneCallback = null;
@@ -49,14 +40,13 @@ public class Ssdp extends CordovaPlugin {
     private static final String TAG = "Cordova SSDP";
 
     private NetworkChangeReceiver mReceiver;
-    private String mLastNetworkId = "Unknown";
 
     @Override
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
         super.initialize(cordova, webView);
 
         mReceiver = new NetworkChangeReceiver(cordova.getActivity());
-        mReceiver.setNetworkChangeConsumer(new NetworkChangeConsumer());
+        mReceiver.setNetworkChangeConsumer(new NetworkChangeConsumer(mReceiver.getCurrentNetworkInfo()));
         mReceiver.register();
     }
 
@@ -211,7 +201,7 @@ public class Ssdp extends CordovaPlugin {
                 message.getHeader("SERVER"),
                 message.getHeader("USN"),
                 message.getHeader("CACHE-CONTROL"),
-                mLastNetworkId
+                mReceiver.getCurrentNetworkInfo().getExtraInfo()
             );
 
             try {
@@ -235,7 +225,7 @@ public class Ssdp extends CordovaPlugin {
         }
     }
 
-    class SearchThread extends RestartableThread {
+    private class SearchThread extends Thread {
         private final String mTarget;
         private final CallbackContext mCallbackContext;
 
@@ -244,16 +234,6 @@ public class Ssdp extends CordovaPlugin {
         SearchThread(String target, final CallbackContext callbackContext) {
             mTarget = target;
             mCallbackContext = callbackContext;
-        }
-
-        @Override
-        public void restart() {
-            silent = true;
-
-            interrupt();
-
-            silent = false;
-            start();
         }
 
         @Override
@@ -282,14 +262,7 @@ public class Ssdp extends CordovaPlugin {
                     PluginResult result = new PluginResult(PluginResult.Status.OK);
                     mCallbackContext.sendPluginResult(result);
                 }
-            } catch (IOException e) {
-                e.printStackTrace();
-
-                if (mCallbackContext != null && !silent) {
-                    PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                    mCallbackContext.sendPluginResult(result);
-                }
-            } catch (InterruptedException e) {
+            } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
 
                 if (mCallbackContext != null && !silent) {
@@ -304,7 +277,7 @@ public class Ssdp extends CordovaPlugin {
         }
     }
 
-    class AdvertiseConsumer implements Consumer<DatagramPacket> {
+    private class AdvertiseConsumer implements Consumer<DatagramPacket> {
         private final SsdpService mSsdpService;
         private final String mTarget;
         private final int mPort;
@@ -358,14 +331,12 @@ public class Ssdp extends CordovaPlugin {
         }
     }
 
-    class AdvertiseThread extends RestartableThread {
+    private class AdvertiseThread extends Thread {
         private final String mTarget;
         private final int mPort;
         private final String mName;
         private final String mUuid;
         private final CallbackContext mCallbackContext;
-
-        private boolean silent = false;
 
         AdvertiseThread(String target, int port, String name, String uuid, final CallbackContext callbackContext) {
             mTarget = target;
@@ -373,16 +344,6 @@ public class Ssdp extends CordovaPlugin {
             mName = name;
             mUuid = uuid;
             mCallbackContext = callbackContext;
-        }
-
-        @Override
-        public void restart() {
-            silent = true;
-
-            interrupt();
-
-            silent = false;
-            start();
         }
 
         @Override
@@ -406,29 +367,26 @@ public class Ssdp extends CordovaPlugin {
 
                 while (!this.isInterrupted()) {
                     ssdpService.sendMulticast(aliveMsg);
-                    Thread.sleep(ALIVE_PERIOD);
+                    try {
+                        Thread.sleep(ALIVE_PERIOD);
+                    } catch (InterruptedException ignored) {
+                        this.interrupt();
+                    }
                 }
 
-                if (mCallbackContext != null && !silent) {
+                if (mCallbackContext != null) {
                     PluginResult result = new PluginResult(PluginResult.Status.OK);
                     mCallbackContext.sendPluginResult(result);
                 }
             } catch (IOException e) {
                 e.printStackTrace();
 
-                if (mCallbackContext != null && !silent) {
-                    PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-                    mCallbackContext.sendPluginResult(result);
-                }
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-
-                if (mCallbackContext != null && !silent) {
+                if (mCallbackContext != null) {
                     PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
                     mCallbackContext.sendPluginResult(result);
                 }
             } finally {
-                if (ssdpService != null && !silent) {
+                if (ssdpService != null) {
                     SsdpMessage byebyeMsg = new SsdpMessage(SsdpMessageType.NOTIFY);
                     byebyeMsg.setHeader("HOST", SSDP_ADDRESS);
                     byebyeMsg.setHeader("NT", mTarget);
@@ -449,42 +407,22 @@ public class Ssdp extends CordovaPlugin {
         }
     }
 
-    class NetworkChangeConsumer implements Consumer<NetworkInfo> {
-        private final int NO_NETWORK = -1;
+    private class NetworkChangeConsumer implements Consumer<NetworkInfo> {
+        private NetworkInfo mLastNetworkInfo;
 
-        private int mLastType = NO_NETWORK;
+        NetworkChangeConsumer(NetworkInfo initialNetworkInfo) {
+            mLastNetworkInfo = initialNetworkInfo;
+        }
 
         @Override
         public void accept(NetworkInfo networkInfo) {
-             final int currentType = networkInfo != null ? networkInfo.getType() : NO_NETWORK;
+            if (mLastNetworkInfo != null && NetworkUtil.isWiFi(mLastNetworkInfo.getType()) && mNetworkGoneCallback != null) {
+                PluginResult result = new PluginResult(PluginResult.Status.OK, mLastNetworkInfo.getExtraInfo());
+                result.setKeepCallback(true);
+                mNetworkGoneCallback.sendPluginResult(result);
+            }
 
-             if (mLastType != currentType) {
-                 String log;
-                 if (networkInfo != null) {
-                     String type = NetworkUtil.getConnectivityTypeString(networkInfo);
-                     String status = NetworkUtil.getConnectivityStatusString(networkInfo);
-                     String extra = networkInfo.getExtraInfo();
-
-                     log = status + " " + type + " " + extra;
-
-                     if (NetworkUtil.isWiFi(currentType)) {
-                         mLastNetworkId = extra;
-                         thread.restart();
-
-                         PluginResult result = new PluginResult(PluginResult.Status.OK, mLastNetworkId);
-                         result.setKeepCallback(true);
-                         mNetworkGoneCallback.sendPluginResult(result);
-                     } else {
-                         thread.interrupt();
-                     }
-                 } else {
-                     log = "Disconnected";
-                     thread.interrupt();
-                 }
-
-                 mLastType = currentType;
-                 Log.d(TAG, log);
-             }
+            mLastNetworkInfo = networkInfo;
         }
     }
 }
