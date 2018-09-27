@@ -70,7 +70,7 @@ exports.startSearching = function(target) {
           const isDeviceExpired = dateWithCache < now;
 
           if (isDeviceExpired) {
-            devices.delete(usn);
+            unregisterDevice(device);
           }
         }
       }, 5000);
