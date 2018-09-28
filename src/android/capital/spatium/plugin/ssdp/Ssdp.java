@@ -127,6 +127,7 @@ public class Ssdp extends CordovaPlugin {
     private void stop(JSONArray args, final CallbackContext callbackContext) {
         if (thread != null && thread.isAlive()) {
             thread.interrupt();
+            thread = null;
         }
 
         PluginResult result = new PluginResult(PluginResult.Status.OK);
@@ -143,11 +144,6 @@ public class Ssdp extends CordovaPlugin {
 
     private void setNetworkGoneCallback(final CallbackContext callbackContext) {
         mNetworkGoneCallback = callbackContext;
-    }
-
-    private static byte[] convertIpAddress(int ip) {
-        return new byte[] { (byte) (ip & 0xFF), (byte) ((ip >> 8) & 0xFF), (byte) ((ip >> 16) & 0xFF),
-                (byte) ((ip >> 24) & 0xFF) };
     }
 
     private boolean containsTarget(SsdpMessage message, String target) {
@@ -446,11 +442,20 @@ public class Ssdp extends CordovaPlugin {
 
             mLastNetworkInfo = networkInfo;
 
-            if (mLastNetworkInfo != null && NetworkUtil.isWiFi(mLastNetworkInfo.getType())) {
+            if (
+              mLastNetworkInfo != null &&
+              NetworkUtil.isWiFi(mLastNetworkInfo.getType()) &&
+              thread != null
+            ) {
                 try {
                     thread.joinGroup();
                     if (thread instanceof SearchThread) {
-                        ((SearchThread) thread).search();
+                        cordova.getThreadPool().submit(new Runnable() {
+                            @Override
+                            public void run() {
+                                ((SearchThread) thread).search();
+                            }
+                        });
                     }
                 } catch (IOException e) {
                     e.printStackTrace();
