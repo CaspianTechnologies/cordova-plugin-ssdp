@@ -4,8 +4,6 @@
     <name>SSDP</name>
     <description>SSDP plugin</description>
 
-    <dependency id="cordova-plugin-device"/>
-
     <js-module src="www/ssdp.js" name="SSDP">
         <clobbers target="cordova.plugins.ssdp"/>
     </js-module>

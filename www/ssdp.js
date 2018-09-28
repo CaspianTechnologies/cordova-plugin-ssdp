@@ -1,5 +1,4 @@
 const exec = require('cordova/exec');
-const device = require('cordova-plugin-device.device');
 
 const devices = new Map();
 let deviceDiscoveredClientCallback = null;
@@ -80,10 +79,8 @@ exports.startSearching = function(target) {
   });
 };
 
-exports.startAdvertising = function(target, port) {
+exports.startAdvertising = function(target, name, usn, port) {
   return new Promise(function(success, error) {
-    const name = device.model;
-    const usn = device.uuid;
     exec(success, error, "SSDP", "startAdvertising", [target, port, name, usn]);
   });
 };
