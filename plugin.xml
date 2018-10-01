@@ -61,4 +61,13 @@
         <framework src="src/windows/native/SSDP/SSDP/SSDP.csproj" custom="true"
                    type="projectReference" versions="10.*"/>
     </platform>
+     <platform name="ios">
+        <config-file target="config.xml" parent="/*">
+            <feature name="SSDP">
+                <param name="ios-package" value="SSDP"/>
+            </feature>
+        </config-file>
+        <header-file src="src/ios/SSDP.h" />
+        <source-file src="src/ios/SSDP.m" />
+    </platform>
 </plugin>
