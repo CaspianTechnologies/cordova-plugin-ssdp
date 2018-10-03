@@ -122,6 +122,7 @@
     <Compile Include="SsdpMessage.cs" />
     <Compile Include="SubnetMask.cs" />
     <Compile Include="SystemLogger.cs" />
+    <Compile Include="WiFiInfo.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NETCore.UniversalWindowsPlatform">

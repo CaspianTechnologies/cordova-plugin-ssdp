@@ -23,12 +23,14 @@ namespace Client
         private EventTimer eventTimer;
         private ILogger logger;
         private DatagramSocket socket;
+        private WiFiInfo wiFiInfo;
 
         public MainPage()
         {
             InitializeComponent();
 
             logger = new TextBoxLogger(svLog, TbLog);
+            wiFiInfo = new WiFiInfo();
 
             controlPoint = new ControlPoint(logger) { Target = "spatium" };
             controlPoint.DeviceDiscovered += DiscoveredCallback;
@@ -41,9 +43,12 @@ namespace Client
                 Port = 12345
             };
             eventTimer = new EventTimer(logger);
-            eventTimer.Tick += (s, t) =>
+            eventTimer.Tick += async (s, t) =>
             {
                 logger.WriteLine(t.ToString());
+                IsAvailable.Text = (await wiFiInfo.IsAvailable()).ToString();
+                IsEnabled.Text = (await wiFiInfo.IsEnabled()).ToString();
+                IsConnected.Text = (await wiFiInfo.IsConnected()).ToString();
             };
 
             Loaded += (s, e) =>
