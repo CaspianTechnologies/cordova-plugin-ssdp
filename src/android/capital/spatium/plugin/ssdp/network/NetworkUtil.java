@@ -13,10 +13,35 @@ public class NetworkUtil {
     }
 
     public static boolean equal(NetworkInfo x, NetworkInfo y) {
-        return (x != null) == (y != null) &&
-               ((x == null) ||
-                (x.getType() == y.getType() && x.getExtraInfo().equals(y.getExtraInfo()))
-               );
+        // one is null and other is not
+        if ((x == null) != (y == null)) {
+            return false;
+        }
+
+        // both are null
+        if (x == null) {
+            return true;
+        }
+
+        // Network typ differs
+        if (x.getType() != y.getType()) {
+            return false;
+        }
+
+        String xExtra = x.getExtraInfo();
+        String yExtra = y.getExtraInfo();
+
+        // one is null and other is not
+        if ((xExtra == null) != (yExtra == null)) {
+            return false;
+        }
+
+        // both are null
+        if (xExtra == null) {
+            return true;
+        }
+
+        return xExtra.equals(yExtra);
     }
 
     public static boolean isWiFi(int type){
