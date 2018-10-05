@@ -107,6 +107,9 @@
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="AdapterStatusChangedEvent.cs" />
+    <Compile Include="AvailabilityChangedEvent.cs" />
+    <Compile Include="ConnectionChangedEvent.cs" />
     <Compile Include="Device.cs" />
     <Compile Include="DictionaryExtensions.cs" />
     <Compile Include="EventTimer.cs" />

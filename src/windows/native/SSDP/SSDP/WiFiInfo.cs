@@ -1,15 +1,56 @@
 ﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Windows.Devices.Enumeration;
 using Windows.Devices.Radios;
 using Windows.Devices.WiFi;
 using Windows.Foundation;
 using Windows.Networking.Connectivity;
+using Windows.UI.Core;
 
 namespace SSDP
 {
     public sealed class WiFiInfo
     {
+        public event EventHandler<AvailabilityChangedEvent> AvailabilityChanged;
+        public event EventHandler<AdapterStatusChangedEvent> AdapterStatusChanged;
+        public event EventHandler<ConnectionChangedEvent> ConnectionChanged;
+
+        private readonly CoreDispatcher dispatcher;
+        private readonly DeviceWatcher deviceWatcher;
+
+        public WiFiInfo()
+        {
+            dispatcher = CoreWindow.GetForCurrentThread().Dispatcher;
+            deviceWatcher = DeviceInformation.CreateWatcher(WiFiAdapter.GetDeviceSelector());
+            deviceWatcher.Added += DeviceWatcher_Added;
+            deviceWatcher.Removed += DeviceWatcher_Removed;
+            deviceWatcher.Start();
+        }
+
+        private void DeviceWatcher_Added(DeviceWatcher sender, DeviceInformation args)
+        {
+            NotifyAvailabilityChanged(true, args.Id);
+        }
+
+        private void DeviceWatcher_Removed(DeviceWatcher sender, DeviceInformationUpdate args)
+        {
+            NotifyAvailabilityChanged(false, args.Id);
+        }
+
+        private async void NotifyAvailabilityChanged(bool available, string adapterId)
+        {
+            if (AvailabilityChanged != null)
+            {
+                var data = new AvailabilityChangedEvent { Available = available, AdapterId = adapterId };
+                await dispatcher.RunAsync(CoreDispatcherPriority.Normal,
+                        new DispatchedHandler(() =>
+                        {
+                            AvailabilityChanged?.Invoke(this, data);
+                        }));
+            }
+        }
+
         public IAsyncOperation<bool> IsAvailable()
         {
             return Task.Run(async () =>

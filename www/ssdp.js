@@ -108,3 +108,15 @@ exports.setDeviceGoneCallback = function(callback) {
   deviceGoneClientCallback = callback;
   exec(unregisterDevice, null, "SSDP", "setDeviceGoneCallback", [unregisterDevice]);
 };
+
+exports.isAvailable = function() {
+  exec(success, error, "SSDP", "isAvailable", []);
+};
+
+exports.isEnabled = function() {
+  exec(success, error, "SSDP", "isEnabled", []);
+};
+
+exports.isConnected = function() {
+  exec(success, error, "SSDP", "isConnected", []);
+};

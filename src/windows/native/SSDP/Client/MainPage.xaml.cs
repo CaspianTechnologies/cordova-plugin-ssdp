@@ -46,10 +46,12 @@ namespace Client
             eventTimer.Tick += async (s, t) =>
             {
                 logger.WriteLine(t.ToString());
-                IsAvailable.Text = (await wiFiInfo.IsAvailable()).ToString();
+                //IsAvailable.Text = (await wiFiInfo.IsAvailable()).ToString();
                 IsEnabled.Text = (await wiFiInfo.IsEnabled()).ToString();
                 IsConnected.Text = (await wiFiInfo.IsConnected()).ToString();
             };
+
+            wiFiInfo.AvailabilityChanged += (s, a) => IsAvailable.Text = a.Available ? "Available" : "Unavailable";
 
             Loaded += (s, e) =>
             {
