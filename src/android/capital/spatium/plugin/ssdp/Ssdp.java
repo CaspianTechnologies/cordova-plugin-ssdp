@@ -168,11 +168,15 @@ public class Ssdp extends CordovaPlugin {
 
     private SsdpMessage parseMessage(DatagramPacket packet) {
         if (packet == null || packet.getData() == null) {
-            throw new IllegalArgumentException("Not an ssdp packet");
+            return null;
         }
 
-        final String msgString = new String(packet.getData()).trim();
-        return SsdpMessage.toMessage(msgString);
+		try {
+			final String msgString = new String(packet.getData()).trim();
+			return SsdpMessage.toMessage(msgString);
+		} catch (Exception e) {
+			return null;
+		}
     }
 
     private class SearchConsumer implements Consumer<DatagramPacket> {
