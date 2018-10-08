@@ -30,7 +30,7 @@ namespace Client
             InitializeComponent();
 
             logger = new TextBoxLogger(svLog, TbLog);
-            wiFiInfo = new WiFiInfo();
+            wiFiInfo = new WiFiInfo(logger);
 
             controlPoint = new ControlPoint(logger) { Target = "spatium" };
             controlPoint.DeviceDiscovered += DiscoveredCallback;

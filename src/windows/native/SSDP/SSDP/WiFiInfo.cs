@@ -16,16 +16,43 @@ namespace SSDP
         public event EventHandler<AdapterStatusChangedEvent> AdapterStatusChanged;
         public event EventHandler<ConnectionChangedEvent> ConnectionChanged;
 
+        private readonly ILogger logger;
         private readonly CoreDispatcher dispatcher;
         private readonly DeviceWatcher deviceWatcher;
 
-        public WiFiInfo()
+        public WiFiInfo() : this(new SystemLogger()) { }
+
+        public WiFiInfo(ILogger logger)
         {
+            this.logger = logger;
             dispatcher = CoreWindow.GetForCurrentThread().Dispatcher;
             deviceWatcher = DeviceInformation.CreateWatcher(WiFiAdapter.GetDeviceSelector());
             deviceWatcher.Added += DeviceWatcher_Added;
             deviceWatcher.Removed += DeviceWatcher_Removed;
             deviceWatcher.Start();
+
+            NetworkInformation.NetworkStatusChanged += NetworkInformation_NetworkStatusChanged;
+        }
+
+        private async void NetworkInformation_NetworkStatusChanged(object sender)
+        {
+            var profiles = NetworkInformation.GetConnectionProfiles().Where(p => p.IsWlanConnectionProfile);
+            foreach (ConnectionProfile profile in profiles)
+            {
+                if (ConnectionChanged != null)
+                {
+                    var data = new ConnectionChangedEvent {
+                        Connected = profile.GetNetworkConnectivityLevel() != NetworkConnectivityLevel.None,
+                        AdapterId = profile.NetworkAdapter.NetworkAdapterId.ToString(),
+                        WiFiName = profile.ProfileName
+                    };
+                    await dispatcher.RunAsync(CoreDispatcherPriority.Normal,
+                            new DispatchedHandler(() =>
+                            {
+                                ConnectionChanged?.Invoke(this, data);
+                            }));
+                }
+            }
         }
 
         private void DeviceWatcher_Added(DeviceWatcher sender, DeviceInformation args)
