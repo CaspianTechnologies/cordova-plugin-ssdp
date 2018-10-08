@@ -4,8 +4,12 @@
 #include <arpa/inet.h>
 #import <Cordova/CDVPlugin.h>
 #import <Cordova/CDVInvokedUrlCommand.h>
+#import "GCDAsyncUdpSocket.h"
+#import "SSDPServiceBrowser.h"
 
-@interface SSDP : CDVPlugin
+@interface SSDP : CDVPlugin <GCDAsyncUdpSocketDelegate, SSDPServiceBrowserDelegate> {
+    
+}
 
 - (void)startSearching:(CDVInvokedUrlCommand*)command;
 - (void)startAdvertising:(CDVInvokedUrlCommand*)command;

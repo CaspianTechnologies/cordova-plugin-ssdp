@@ -1,32 +1,38 @@
 #import "SSDP.h"
 #import <Cordova/CDVPlugin.h>
 #import <SystemConfiguration/CaptiveNetwork.h>
+#import "GCDAsyncUdpSocket.h"
+#import "SSDPMessage.h"
+#import "SSDPServiceTypes.h"
+#import "SSDPService.h"
+
+@interface SSDP () {
+    SSDPServiceBrowser *_browser;
+    NSMutableArray *_services;
+}
+@end
 
 NSMutableArray *serviceArr;
 
 //CDVInvokedUrlCommand *searchCommand;
 //CDVInvokedUrlCommand *searchCommand;
 NSString* deviceDiscoveredCallbackId;
+NSString* deviceGoneCallbackId;
 NSString* setDeviceGoneCallbackId;
+NSString* stopCallbackId;
+GCDAsyncUdpSocket *multicastSocket;
+GCDAsyncUdpSocket *unicastSocket;
+BOOL isRunning;
+NSTimer *timer;
+NSString *target;
+NSString *usn;
+NSNumber *port;
+NSString *name;
+
+const int BYEBYE_TAG = 1000;
 
 
 @implementation SSDP
-
-
-
-- (void)echo:(CDVInvokedUrlCommand*)command
-{
-    CDVPluginResult* pluginResult = nil;
-    NSString* echo = [command.arguments objectAtIndex:0];
-
-    if (echo != nil && [echo length] > 0) {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:echo];
-    } else {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR];
-    }
-
-    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
-}
 
 -(NSString *)getCurrentWIFIName {
     NSString *wifiName = nil;
@@ -46,159 +52,198 @@ NSString* setDeviceGoneCallbackId;
 }
 
 - (void)startSearching:(CDVInvokedUrlCommand*)command {
-    NSString* target = [command.arguments objectAtIndex:0];
-
-    NSLog(@"target: %@", target);
+    NSLog(@"starting search");
+    
     [self.commandDelegate runInBackground:^{
+        NSString* target = [command.arguments objectAtIndex:0];
+        NSLog(@"target: %@", target);
         
+        if (_browser) {
+            [_browser stopBrowsingForServices];
+            [_services removeAllObjects];
+        } else {
+            _browser = [[SSDPServiceBrowser alloc] init];
+            _browser.delegate = self;
+        }
+        
+        [_browser startBrowsingForServices:SSDPServiceType_Spatium];
         CDVPluginResult* pluginResult = nil;
-        if (target == nil)
-        {
-            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"service (target) not provided"];
-        }
-        else
-        {
-            
-            serviceArr = [[NSMutableArray alloc] init];
-            
-            // Open a socket
-            int sd = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
-            if (sd <= 0) {
-                NSLog(@"Error: Could not open socket");
-                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"TX socket creation failed"];
-            }
-            else {
-                // Set socket options
-                int broadcastEnable = 1;
-                int ret = setsockopt(sd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
-                if (ret) {
-                    NSLog(@"Error: setsockopt failed to enable broadcast mode");
-                    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"TX socket setsockopt failed"];
-                    close(sd);
-                }
-                else {
-                    
-                    // Configure the broadcast IP and port
-                    struct sockaddr_in broadcastAddr;
-                    memset(&broadcastAddr, 0, sizeof broadcastAddr);
-                    broadcastAddr.sin_family = AF_INET;
-                    inet_pton(AF_INET, "239.255.255.250", &broadcastAddr.sin_addr);
-                    broadcastAddr.sin_port = htons(1900);
-                    
-                    // Send the broadcast request for the given service type
-                     NSString *request = [[@"M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nST: " stringByAppendingString:target] stringByAppendingString:@"\r\nMX: 1\r\n\r\n"];
-                    char *requestStr = [request UTF8String];
-                    
-                    ret = sendto(sd, requestStr, strlen(requestStr), 0, (struct sockaddr*)&broadcastAddr, sizeof broadcastAddr);
-                    if (ret < 0) {
-                        NSLog(@"Error: Could not send broadcast");
-                        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"sendto failed"];
-                        close(sd);
-                    }
-                    else {
-                        
-                        NSLog(@"ret:%d", ret);
-                        NSLog(@"Bcast msg sent");
-                        
-                        
-                        NSLog(@"recv: On to listening");
-                        
-                        // set timeout to 2 seconds.
-                        struct timeval timeV;
-                        timeV.tv_sec = 2;
-                        timeV.tv_usec = 0;
-                        
-                        if (setsockopt(sd, SOL_SOCKET, SO_RCVTIMEO, &timeV, sizeof(timeV)) == -1) {
-                            NSLog(@"Error: listenForPackets - setsockopt failed");
-                            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"RX socket setsockopt failed"];
-                            close(sd);
-                        }
-                        else {
-                            NSLog(@"recv: socketopt set");
-                            
-                            // receive
-                            struct sockaddr_in receiveSockaddr;
-                            socklen_t receiveSockaddrLen = sizeof(receiveSockaddr);
-                            
-                            size_t bufSize = 9216;
-                            void *buf = malloc(bufSize);
-                            NSLog(@"recv: listening now: %d", sd);
-                            
-                            
-                            // Keep listening till the socket timeout event occurs
-                            while (true)
-                            {
-                                ssize_t result = recvfrom(sd, buf, bufSize, 0,
-                                                          (struct sockaddr *)&receiveSockaddr,
-                                                          (socklen_t *)&receiveSockaddrLen);
-                                //                                NSLog(@"got sthing:%ld", result);
-                                
-                                if (result < 0)
-                                {
-                                    NSLog(@"timeup");
-                                    break;
-                                }
-                                
-                                NSData *data = nil;
-                                data = [NSData dataWithBytesNoCopy:buf length:result freeWhenDone:NO];
-                                
-                                NSString *msg = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-                                
-                                char* address = inet_ntoa(receiveSockaddr.sin_addr);
-                                printf("address: %s\n",address);
-                                NSMutableDictionary *messageDict = [self processResponse:msg];
-                                messageDict[@"IP"] = [NSString stringWithUTF8String:address];
-                                [serviceArr addObject: messageDict];
-                                
-                                NSDictionary *device = @{@"ip": messageDict[@"IP"],
-                                                         @"port" : [NSNumber numberWithInt:[messageDict[@"PORT"] intValue]],
-                                                         @"name" :  messageDict[@"SERVER"],
-                                                         @"usn" :  messageDict[@"USN"],
-                                                         @"cacheControl" : messageDict[@"CACHE-CONTROL"],
-                                                         @"networkId" : [self getCurrentWIFIName]};
-                            
-                                NSLog(@"device: %@", device);
-                                
-                                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:device];
-                                [pluginResult setKeepCallbackAsBool:YES];
-                                [self.commandDelegate sendPluginResult:pluginResult callbackId:deviceDiscoveredCallbackId];
-                            }
-                            
-                            free(buf);
-                            close(sd);
-                            
-//                            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsArray:serviceArr];
-                        }
-                    }
-                }
-            }
-            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
-        }
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     }];
-
-    // [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 
 }
 - (void)startAdvertising:(CDVInvokedUrlCommand*)command {
     CDVPluginResult* pluginResult = nil;
+    
+    target = [command.arguments objectAtIndex:0];
+    port = [command.arguments objectAtIndex:1];
+    name = [command.arguments objectAtIndex:2];
+    usn = [command.arguments objectAtIndex:3];
+    
+    multicastSocket = [[GCDAsyncUdpSocket alloc] initWithDelegate:self delegateQueue:dispatch_get_main_queue()];
 
-    NSString* target = [command.arguments objectAtIndex:0]; 
-    NSNumber* port = [command.arguments objectAtIndex:1];
-    NSString* name = [command.arguments objectAtIndex:2];
-    NSString* usn = [command.arguments objectAtIndex:3];
+    NSError *error = nil;
 
-    NSLog(@"target: %@", target);
-    NSLog(@"port: %@", [port stringValue]);
-    NSLog(@"name: %@", name);
-    NSLog(@"usn: %@", usn);
+    NSString *errorMessage;
+    if (![multicastSocket bindToPort:1900 error:&error]) {
+        errorMessage = [NSString stringWithFormat:@"Error binding to port 1900: %@", [error localizedDescription]];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:errorMessage];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        NSLog(@"%@", errorMessage);
+        return;
+    }
+    if (![multicastSocket enableBroadcast:YES error:&error]) {
+        errorMessage = [NSString stringWithFormat:@"Error enabling broadcast: %@", [error localizedDescription]];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:errorMessage];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        NSLog(@"%@", errorMessage);
+        return;
+    }
+    if (![multicastSocket joinMulticastGroup:@"239.255.255.250" error:&error]) {
+        errorMessage = [NSString stringWithFormat:@"Error joining multicast group: %@", [error localizedDescription]];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:errorMessage];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        NSLog(@"%@", errorMessage);
+        return;
+    }
+    if (![multicastSocket beginReceiving:&error])
+    {
+        [multicastSocket close];
+        errorMessage = [NSString stringWithFormat:@"Error begin receiving for multicast socket: %@", [error localizedDescription]];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:errorMessage];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        NSLog(@"%@", errorMessage);
+        return;
+    }
+    
+    timer = [NSTimer scheduledTimerWithTimeInterval: 10
+                                             target: self
+                                           selector: @selector(sendAliveMessage:)
+                                           userInfo: nil
+                                            repeats: YES];
 
-    // [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+//    NSLog(@"Udp Echo server started on %@:%i",[udpSocket localHost_IPv4],[udpSocket localPort]);
+    
+    isRunning = YES;
+    
+    unicastSocket = [[GCDAsyncUdpSocket alloc] initWithDelegate:self delegateQueue:dispatch_get_main_queue()];
+    
+    if (![unicastSocket bindToPort:0 error:&error])
+    {
+        errorMessage = [NSString stringWithFormat:@"Error binding to port 0 (unicast socket): %@", [error localizedDescription]];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:errorMessage];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        NSLog(@"%@", errorMessage);
+        return;
+    }
+    
+    if (![unicastSocket beginReceiving:&error])
+    {
+        [unicastSocket close];
+        errorMessage = [NSString stringWithFormat:@"Error begin receiving for unicast socket: %@", [error localizedDescription]];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:errorMessage];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        NSLog(@"%@", errorMessage);
+        return;
+    }
 
+    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
-- (void)stop:(CDVInvokedUrlCommand*)command {
-//    CDVPluginResult* pluginResult = nil;
 
-    // [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+-(void)sendAliveMessage:(NSTimer *)timer {
+    NSString *msg = [NSString stringWithFormat:@"NOTIFY * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nCACHE-CONTROL: max-age = 30\r\nNT: %@\r\nNTS: ssdp:alive\r\nSERVER: %@\r\nUSN: %@\r\nPORT: %i\r\n\r\n", target, name, usn, [port intValue]];
+    
+    NSData *data = [msg dataUsingEncoding:NSUTF8StringEncoding];
+    [multicastSocket sendData:data toHost:@"239.255.255.250" port:1900 withTimeout:-1 tag:0];
+}
+
+-(void)sendByeByeMessage {
+    NSString *msg = [NSString stringWithFormat:@"NOTIFY * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nNT: %@\r\nNTS: ssdp:byebye\r\nSERVER: %@\r\nUSN: %@\r\nPORT: %i\r\n\r\n", target, name, usn, [port intValue]];
+    
+    NSData *data = [msg dataUsingEncoding:NSUTF8StringEncoding];
+    [multicastSocket sendData:data toHost:@"239.255.255.250" port:1900 withTimeout:-1 tag:BYEBYE_TAG];
+}
+
+- (void)udpSocket:(GCDAsyncUdpSocket *)sock didSendDataWithTag:(long)tag {
+    if (tag == BYEBYE_TAG) {
+        [multicastSocket close];
+        multicastSocket = nil;
+        // or
+        // [sock close];
+        [unicastSocket close];
+        unicastSocket = nil;
+        CDVPluginResult* pluginResult = nil;
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:stopCallbackId];
+    }
+}
+
+- (void)udpSocket:(GCDAsyncUdpSocket *)sock didReceiveData:(NSData *)data
+      fromAddress:(NSData *)address
+withFilterContext:(id)filterContext
+{
+    if (!isRunning) return;
+    
+    if (sock != multicastSocket) {
+        return;
+    }
+    
+//    NSString *host = @"";
+//    UInt16 port1 = 0;
+//    [GCDAsyncUdpSocket getHost:&host port:&port1 fromAddress:address];
+//    NSLog(@"host: %@",host);
+//    NSLog(@"port: %i",port1);
+    
+    NSString *msg = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    if (msg)
+    {
+        /* If you want to get a display friendly version of the IPv4 or IPv6 address, you could do this:
+         
+         NSString *host = nil;
+         uint16_t port = 0;
+         [GCDAsyncUdpSocket getHost:&host port:&port fromAddress:address];
+         
+         */
+        
+        SSDPMessage *message = [SSDPMessage SSDPMessageWithString:msg];
+//        NSDictionary *messageDict = [self parseSSDPMessage:msg];
+//        NSLog(@"message: %@", messageDict);
+        
+        NSLog(@"msg: %@", msg);
+        NSLog(@"SSDPMessage: %@", message);
+        
+        if (message.messageType == SsdpMessageType_SearchRequest && message.ST && [message.ST isEqualToString:target]) {
+            NSString *message = [NSString stringWithFormat: @"HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age = 30\r\nEXT:\r\nSERVER: %@\r\nST: %@\r\nUSN: %@\r\nPORT: %i\r\n\r\n", name, target, usn, [port intValue]];
+            NSData *data2 = [message dataUsingEncoding:NSUTF8StringEncoding];
+            [unicastSocket sendData:data2 toAddress:address withTimeout:-1 tag:0];
+        }
+        
+    }
+    else
+    {
+        NSLog(@"Error converting received data into UTF-8 String");
+//        [self logError:@"Error converting received data into UTF-8 String"];
+    }
+}
+
+- (void)stop:(CDVInvokedUrlCommand*)command {
+    
+    stopCallbackId = command.callbackId;
+    
+    [_browser stopBrowsingForServices];
+    [_services removeAllObjects];
+    
+    if (multicastSocket) {
+        [timer invalidate];
+        timer = nil;
+        [self sendByeByeMessage];
+    } else {
+        CDVPluginResult* pluginResult = nil;
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:stopCallbackId];
+    }
 }
 
 - (void)setNetworkGoneCallback:(CDVInvokedUrlCommand*)command {
@@ -216,10 +261,10 @@ NSString* setDeviceGoneCallbackId;
 
 }
 - (void)setDeviceGoneCallback:(CDVInvokedUrlCommand*)command {
-    CDVPluginResult* pluginResult = nil;
+//    CDVPluginResult* pluginResult = nil;
 
     // [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
-
+    deviceGoneCallbackId = command.callbackId;
 }
 
 /*
@@ -259,6 +304,61 @@ NSString* setDeviceGoneCallbackId;
     }
     return data;
     
+}
+
+- (void) ssdpBrowser:(SSDPServiceBrowser *)browser didNotStartBrowsingForServices:(NSError *)error {
+    NSLog(@"SSDP Browser got error: %@", error);
+    UIAlertView *alert = [[UIAlertView alloc] initWithTitle:error.domain message:error.localizedDescription delegate:self cancelButtonTitle:@"Ok" otherButtonTitles:nil];
+    [alert show];
+}
+
+- (void) ssdpBrowser:(SSDPServiceBrowser *)browser didFindService:(SSDPService *)service {
+    NSLog(@"SSDP Browser found: %@", service);
+    
+    if (![service.serviceType isEqualToString:SSDPServiceType_Spatium]) {
+        return;
+    }
+          
+    [_services insertObject:service atIndex:0];
+    NSDictionary *device = @{@"ip": service.host,
+                             @"port" : service.port,
+                             @"name" :  service.server,
+                             @"usn" :  service.uniqueServiceName,
+                             @"cacheControl" : service.cacheControl,
+                             @"networkId" : [self getCurrentWIFIName]};
+    
+    NSLog(@"device: %@", device);
+    
+    CDVPluginResult* pluginResult = nil;
+    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:device];
+    [pluginResult setKeepCallbackAsBool:YES];
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:deviceDiscoveredCallbackId];
+    
+    // NSIndexPath *indexPath = [NSIndexPath indexPathForRow:0 inSection:0];
+    // TODO: [self.tableView insertRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
+}
+
+- (void) ssdpBrowser:(SSDPServiceBrowser *)browser didRemoveService:(SSDPService *)service {
+    NSLog(@"SSDP Browser removed: %@", service);
+    if (![service.serviceType isEqualToString:SSDPServiceType_Spatium]) {
+        return;
+    }
+    
+    // TODO: remove object with from services with service.uniqueServiceName
+//    [_services removeObject]
+//    [_services insertObject:service atIndex:0];
+    NSDictionary *device = @{@"ip": service.host,
+                             @"port" : service.port,
+                             @"name" :  service.server,
+                             @"usn" :  service.uniqueServiceName,
+                             @"networkId" : [self getCurrentWIFIName]};
+    
+    NSLog(@"device: %@", device);
+    
+    CDVPluginResult* pluginResult = nil;
+    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:device];
+    [pluginResult setKeepCallbackAsBool:YES];
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:deviceGoneCallbackId];
 }
 
 @end
