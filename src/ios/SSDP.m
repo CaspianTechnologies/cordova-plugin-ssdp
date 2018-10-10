@@ -55,6 +55,13 @@ const int BYEBYE_TAG = 1000;
     NSLog(@"starting search");
     
     [self.commandDelegate runInBackground:^{
+        
+        [[NSNotificationCenter defaultCenter]addObserver:self
+                                                selector:@selector(restartSearching)
+                                                    name:UIApplicationDidBecomeActiveNotification
+                                                  object:nil];
+        
+        
         NSString* target = [command.arguments objectAtIndex:0];
         NSLog(@"target: %@", target);
         
@@ -71,10 +78,26 @@ const int BYEBYE_TAG = 1000;
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     }];
-
 }
+
+-(void)restartSearching {
+    if (_browser) {
+        [_browser stopBrowsingForServices];
+        [_services removeAllObjects];
+    } else {
+        _browser = [[SSDPServiceBrowser alloc] init];
+        _browser.delegate = self;
+    }
+    [_browser startBrowsingForServices:SSDPServiceType_Spatium];
+}
+
 - (void)startAdvertising:(CDVInvokedUrlCommand*)command {
     CDVPluginResult* pluginResult = nil;
+    
+    [[NSNotificationCenter defaultCenter]addObserver:self
+                                            selector:@selector(restartAdvertising)
+                                                name:UIApplicationDidBecomeActiveNotification
+                                              object:nil];
     
     target = [command.arguments objectAtIndex:0];
     port = [command.arguments objectAtIndex:1];
@@ -122,8 +145,6 @@ const int BYEBYE_TAG = 1000;
                                            selector: @selector(sendAliveMessage:)
                                            userInfo: nil
                                             repeats: YES];
-
-//    NSLog(@"Udp Echo server started on %@:%i",[udpSocket localHost_IPv4],[udpSocket localPort]);
     
     isRunning = YES;
     
@@ -150,6 +171,76 @@ const int BYEBYE_TAG = 1000;
 
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
+-(void)initializeAdvertisingSockets:(NSString *)target Port:(NSNumber *)port Name:(NSString *)name USN:(NSString *)usn error:(NSError *)error{
+    multicastSocket = [[GCDAsyncUdpSocket alloc] initWithDelegate:self delegateQueue:dispatch_get_main_queue()];
+    
+    NSString *errorMessage;
+    if (![multicastSocket bindToPort:1900 error:&error]) {
+        errorMessage = [NSString stringWithFormat:@"Error binding to port 1900: %@", [error localizedDescription]];
+        NSLog(@"%@", errorMessage);
+        return;
+    }
+    if (![multicastSocket enableBroadcast:YES error:&error]) {
+        errorMessage = [NSString stringWithFormat:@"Error enabling broadcast: %@", [error localizedDescription]];
+        NSLog(@"%@", errorMessage);
+        return;
+    }
+    if (![multicastSocket joinMulticastGroup:@"239.255.255.250" error:&error]) {
+        errorMessage = [NSString stringWithFormat:@"Error joining multicast group: %@", [error localizedDescription]];
+        NSLog(@"%@", errorMessage);
+        return;
+    }
+    if (![multicastSocket beginReceiving:&error])
+    {
+        [multicastSocket close];
+        errorMessage = [NSString stringWithFormat:@"Error begin receiving for multicast socket: %@", [error localizedDescription]];
+        NSLog(@"%@", errorMessage);
+        return;
+    }
+    
+    timer = [NSTimer scheduledTimerWithTimeInterval: 10
+                                             target: self
+                                           selector: @selector(sendAliveMessage:)
+                                           userInfo: nil
+                                            repeats: YES];
+    
+    isRunning = YES;
+    
+    unicastSocket = [[GCDAsyncUdpSocket alloc] initWithDelegate:self delegateQueue:dispatch_get_main_queue()];
+    
+    if (![unicastSocket bindToPort:0 error:&error])
+    {
+        errorMessage = [NSString stringWithFormat:@"Error binding to port 0 (unicast socket): %@", [error localizedDescription]];
+        NSLog(@"%@", errorMessage);
+        return;
+    }
+    
+    if (![unicastSocket beginReceiving:&error])
+    {
+        [unicastSocket close];
+        errorMessage = [NSString stringWithFormat:@"Error begin receiving for unicast socket: %@", [error localizedDescription]];
+        NSLog(@"%@", errorMessage);
+        return;
+    }
+}
+
+-(void)restartAdvertising {
+    if (multicastSocket) {
+        [multicastSocket close];
+        multicastSocket = nil;
+        [unicastSocket close];
+        unicastSocket = nil;
+    }
+    
+    NSError *error = nil;
+    [self initializeAdvertisingSockets:target Port:port Name:name USN:usn error:error];
+    
+    if (error) {
+        NSLog(@"ERROR RESTARTING ADVERTISING: %@", [error localizedDescription]);
+    }
+    
 }
 
 -(void)sendAliveMessage:(NSTimer *)timer {
@@ -230,6 +321,8 @@ withFilterContext:(id)filterContext
 
 - (void)stop:(CDVInvokedUrlCommand*)command {
     
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:UIApplicationDidBecomeActiveNotification object:nil];
+    
     stopCallbackId = command.callbackId;
     
     [_browser stopBrowsingForServices];
@@ -308,8 +401,8 @@ withFilterContext:(id)filterContext
 
 - (void) ssdpBrowser:(SSDPServiceBrowser *)browser didNotStartBrowsingForServices:(NSError *)error {
     NSLog(@"SSDP Browser got error: %@", error);
-    UIAlertView *alert = [[UIAlertView alloc] initWithTitle:error.domain message:error.localizedDescription delegate:self cancelButtonTitle:@"Ok" otherButtonTitles:nil];
-    [alert show];
+//    UIAlertView *alert = [[UIAlertView alloc] initWithTitle:error.domain message:error.localizedDescription delegate:self cancelButtonTitle:@"Ok" otherButtonTitles:nil];
+//    [alert show];
 }
 
 - (void) ssdpBrowser:(SSDPServiceBrowser *)browser didFindService:(SSDPService *)service {

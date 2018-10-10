@@ -211,11 +211,7 @@ typedef enum : NSUInteger {
 - (void)udpSocket:(GCDAsyncUdpSocket *)sock didReceiveData:(NSData *)data
       fromAddress:(NSData *)address withFilterContext:(id)filterContext
 {
-    
-    NSLog(@"DID RECEIVE DATA!!!!!!!!!!!!!!!!!!!!!");
-    
     NSString *msg = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-    NSLog(@"msg: %@", msg);
     
     if( msg ) {
         NSDictionary *headers = [self _parseHeadersFromMessage:msg];
