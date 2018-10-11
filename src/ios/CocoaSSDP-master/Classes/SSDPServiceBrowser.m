@@ -75,7 +75,7 @@ typedef enum : NSUInteger {
 
 - (NSString *)_prepareSearchRequestWithServiceType:(NSString *)serviceType {
     NSString *userAgent = [self _userAgentString];
-
+    
     return [NSString stringWithFormat:@"M-SEARCH * HTTP/1.1\r\n"
             "HOST: %@:%d\r\n"
             "MAN: \"ssdp:discover\"\r\n"
@@ -115,12 +115,12 @@ typedef enum : NSUInteger {
     NSString *searchHeader;
     searchHeader = [self _prepareSearchRequestWithServiceType:serviceType];
     NSData *d = [searchHeader dataUsingEncoding:NSUTF8StringEncoding];
-
+    
     [_unicastSocket sendData:d
-               toHost:SSDPMulticastGroupAddress
-                 port:SSDPMulticastUDPPort
-          withTimeout:-1
-                  tag:11];
+                      toHost:SSDPMulticastGroupAddress
+                        port:SSDPMulticastUDPPort
+                 withTimeout:-1
+                         tag:11];
 }
 
 - (void)setupSocket
@@ -130,12 +130,23 @@ typedef enum : NSUInteger {
     [self.unicastSocket setIPv6Enabled:NO];
     
     NSError *err = nil;
-
-//    NSDictionary *interfaces = [SSDPServiceBrowser availableNetworkInterfaces];
-//    NSData *sourceAddress = _networkInterface? interfaces[_networkInterface] : nil;
-//    if( !sourceAddress ) sourceAddress = [[interfaces allValues] firstObject];
     
-    if(![_unicastSocket bindToPort:0 error:&err]) {
+    NSDictionary *interfaces = [SSDPServiceBrowser availableNetworkInterfaces];
+    NSData *sourceAddress = _networkInterface? interfaces[_networkInterface] : nil;
+    if( !sourceAddress ) sourceAddress = [[interfaces allValues] firstObject];
+    
+    
+    if (![_unicastSocket enableReusePort:YES error:&err]) {
+        [self _notifyDelegateWithError:err];
+        return;
+    }
+    
+    if (![_unicastSocket bindToPort:1900 error:&err]) {
+        [self _notifyDelegateWithError:err];
+        return;
+    }
+    
+    if (![_unicastSocket joinMulticastGroup:SSDPMulticastGroupAddress onInterface:[[GCDAsyncUdpSocket class] hostFromAddress:sourceAddress] error:&err]) {
         [self _notifyDelegateWithError:err];
         return;
     }
@@ -144,17 +155,22 @@ typedef enum : NSUInteger {
         [self _notifyDelegateWithError:err];
         return;
     }
-
-    if(![_socket bindToPort:SSDPMulticastUDPPort error:&err]) {
+    
+    if (![_socket enableReusePort:YES error:&err]) {
         [self _notifyDelegateWithError:err];
         return;
     }
-
-    if(![_socket joinMulticastGroup:SSDPMulticastGroupAddress error:&err]) {
+    
+    if (![_socket bindToAddress:sourceAddress error:&err]) {
         [self _notifyDelegateWithError:err];
         return;
     }
-
+    
+    if (![_socket joinMulticastGroup:SSDPMulticastGroupAddress onInterface:[[GCDAsyncUdpSocket class] hostFromAddress:sourceAddress] error:&err]) {
+        [self _notifyDelegateWithError:err];
+        return;
+    }
+        
     if(![_socket beginReceiving:&err]) {
         [self _notifyDelegateWithError:err];
         return;
@@ -227,14 +243,14 @@ typedef enum : NSUInteger {
         } else
             if ( [headers[SSDPRequestMethodKey] isEqualToString:@"NOTIFY"] ) {
                 NSString *nts = headers[@"nts"];
-            
+                
                 if ( [nts isEqualToString:@"ssdp:alive"] ) {
                     [self _notifyDelegateWithFoundService:service];
                     
                 } else if ([nts isEqualToString:@"ssdp:byebye"]) {
                     [self _notifyDelegateWithRemovedService:service];
                 }
-        }
+            }
     } else {
         NSString *host = nil;
         uint16_t port = 0;
@@ -253,7 +269,7 @@ typedef enum : NSUInteger {
                                   options:NSRegularExpressionCaseInsensitive|
                                   NSRegularExpressionAnchorsMatchLines
                                   error:nil];
-
+    
     __block SSDPMessageType type = SSDPUnknownMessage;
     
     [message enumerateLinesUsingBlock:^(NSString *line, BOOL *stop) {
@@ -320,20 +336,26 @@ typedef enum : NSUInteger {
     NSMutableDictionary *addresses = [NSMutableDictionary dictionary];
     struct ifaddrs *interfaces = NULL;
     struct ifaddrs *ifa = NULL;
-
+    
     // retrieve the current interfaces - returns 0 on success
     if( getifaddrs(&interfaces) == 0 ) {
         for( ifa = interfaces; ifa != NULL; ifa = ifa->ifa_next ) {
-            if( (ifa->ifa_addr->sa_family == AF_INET) && !(ifa->ifa_flags & IFF_LOOPBACK) && !strncmp(ifa->ifa_name, "en", 2)) {
-                NSData *data = [NSData dataWithBytes:ifa->ifa_addr length:sizeof(struct sockaddr_in)];
-                NSString *if_name = [NSString stringWithUTF8String:ifa->ifa_name];
-                [addresses setObject:data forKey:if_name];
+            if (((ifa->ifa_addr->sa_family == AF_INET) || (ifa->ifa_addr->sa_family == AF_INET6)) && !(ifa->ifa_flags & IFF_LOOPBACK)) {
+                if (!strncmp(ifa->ifa_name, "en", 2) || !strncmp(ifa->ifa_name, "bridge", 6)) {
+                    NSData *data = [NSData dataWithBytes:ifa->ifa_addr length:sizeof(struct sockaddr_in)];
+                    NSString *if_name = [NSString stringWithUTF8String:ifa->ifa_name];
+                    
+                    int addressFamily = [[GCDAsyncUdpSocket class] familyFromAddress:data];
+                    if (addressFamily != AF_UNSPEC) {
+                        [addresses setObject:data forKey:if_name];
+                    }
+                }
             }
         }
-
+        
         freeifaddrs(interfaces);
     }
-
+    
     return addresses;
 }
 

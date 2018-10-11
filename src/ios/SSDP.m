@@ -1,3 +1,5 @@
+SSDP.m
+
 #import "SSDP.h"
 #import <Cordova/CDVPlugin.h>
 #import <SystemConfiguration/CaptiveNetwork.h>
@@ -105,9 +107,13 @@ const int BYEBYE_TAG = 1000;
     usn = [command.arguments objectAtIndex:3];
     
     multicastSocket = [[GCDAsyncUdpSocket alloc] initWithDelegate:self delegateQueue:dispatch_get_main_queue()];
-
+    
     NSError *error = nil;
-
+    
+    NSDictionary *interfaces = [SSDPServiceBrowser availableNetworkInterfaces];
+//    NSData *sourceAddress = _networkInterface? interfaces[_networkInterface] : nil;
+    NSData *sourceAddress = [[interfaces allValues] firstObject];
+    
     NSString *errorMessage;
     if (![multicastSocket bindToPort:1900 error:&error]) {
         errorMessage = [NSString stringWithFormat:@"Error binding to port 1900: %@", [error localizedDescription]];
@@ -123,7 +129,7 @@ const int BYEBYE_TAG = 1000;
         NSLog(@"%@", errorMessage);
         return;
     }
-    if (![multicastSocket joinMulticastGroup:@"239.255.255.250" error:&error]) {
+    if (![multicastSocket joinMulticastGroup:@"239.255.255.250" onInterface:[[GCDAsyncUdpSocket class] hostFromAddress:sourceAddress] error:&error]) {
         errorMessage = [NSString stringWithFormat:@"Error joining multicast group: %@", [error localizedDescription]];
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:errorMessage];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -168,12 +174,16 @@ const int BYEBYE_TAG = 1000;
         NSLog(@"%@", errorMessage);
         return;
     }
-
+    
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
 -(void)initializeAdvertisingSockets:(NSString *)target Port:(NSNumber *)port Name:(NSString *)name USN:(NSString *)usn error:(NSError *)error{
+    NSDictionary *interfaces = [SSDPServiceBrowser availableNetworkInterfaces];
+    //    NSData *sourceAddress = _networkInterface? interfaces[_networkInterface] : nil;
+    NSData *sourceAddress = [[interfaces allValues] firstObject];
+    
     multicastSocket = [[GCDAsyncUdpSocket alloc] initWithDelegate:self delegateQueue:dispatch_get_main_queue()];
     
     NSString *errorMessage;
@@ -187,7 +197,7 @@ const int BYEBYE_TAG = 1000;
         NSLog(@"%@", errorMessage);
         return;
     }
-    if (![multicastSocket joinMulticastGroup:@"239.255.255.250" error:&error]) {
+    if (![multicastSocket joinMulticastGroup:@"239.255.255.250" onInterface:[[GCDAsyncUdpSocket class] hostFromAddress:sourceAddress] error:&error]) {
         errorMessage = [NSString stringWithFormat:@"Error joining multicast group: %@", [error localizedDescription]];
         NSLog(@"%@", errorMessage);
         return;
@@ -281,11 +291,11 @@ withFilterContext:(id)filterContext
         return;
     }
     
-//    NSString *host = @"";
-//    UInt16 port1 = 0;
-//    [GCDAsyncUdpSocket getHost:&host port:&port1 fromAddress:address];
-//    NSLog(@"host: %@",host);
-//    NSLog(@"port: %i",port1);
+    //    NSString *host = @"";
+    //    UInt16 port1 = 0;
+    //    [GCDAsyncUdpSocket getHost:&host port:&port1 fromAddress:address];
+    //    NSLog(@"host: %@",host);
+    //    NSLog(@"port: %i",port1);
     
     NSString *msg = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
     if (msg)
@@ -299,8 +309,8 @@ withFilterContext:(id)filterContext
          */
         
         SSDPMessage *message = [SSDPMessage SSDPMessageWithString:msg];
-//        NSDictionary *messageDict = [self parseSSDPMessage:msg];
-//        NSLog(@"message: %@", messageDict);
+        //        NSDictionary *messageDict = [self parseSSDPMessage:msg];
+        //        NSLog(@"message: %@", messageDict);
         
         NSLog(@"msg: %@", msg);
         NSLog(@"SSDPMessage: %@", message);
@@ -315,7 +325,7 @@ withFilterContext:(id)filterContext
     else
     {
         NSLog(@"Error converting received data into UTF-8 String");
-//        [self logError:@"Error converting received data into UTF-8 String"];
+        //        [self logError:@"Error converting received data into UTF-8 String"];
     }
 }
 
@@ -340,22 +350,22 @@ withFilterContext:(id)filterContext
 }
 
 - (void)setNetworkGoneCallback:(CDVInvokedUrlCommand*)command {
-//    CDVPluginResult* pluginResult = nil;
-
+    //    CDVPluginResult* pluginResult = nil;
+    
     // [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
-
+    
 }
 
 - (void)setDeviceDiscoveredCallback:(CDVInvokedUrlCommand*)command {
-//    CDVPluginResult* pluginResult = nil;
-
+    //    CDVPluginResult* pluginResult = nil;
+    
     deviceDiscoveredCallbackId = command.callbackId;
     // [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
-
+    
 }
 - (void)setDeviceGoneCallback:(CDVInvokedUrlCommand*)command {
-//    CDVPluginResult* pluginResult = nil;
-
+    //    CDVPluginResult* pluginResult = nil;
+    
     // [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     deviceGoneCallbackId = command.callbackId;
 }
@@ -401,8 +411,8 @@ withFilterContext:(id)filterContext
 
 - (void) ssdpBrowser:(SSDPServiceBrowser *)browser didNotStartBrowsingForServices:(NSError *)error {
     NSLog(@"SSDP Browser got error: %@", error);
-//    UIAlertView *alert = [[UIAlertView alloc] initWithTitle:error.domain message:error.localizedDescription delegate:self cancelButtonTitle:@"Ok" otherButtonTitles:nil];
-//    [alert show];
+    //    UIAlertView *alert = [[UIAlertView alloc] initWithTitle:error.domain message:error.localizedDescription delegate:self cancelButtonTitle:@"Ok" otherButtonTitles:nil];
+    //    [alert show];
 }
 
 - (void) ssdpBrowser:(SSDPServiceBrowser *)browser didFindService:(SSDPService *)service {
@@ -411,7 +421,7 @@ withFilterContext:(id)filterContext
     if (![service.serviceType isEqualToString:SSDPServiceType_Spatium]) {
         return;
     }
-          
+    
     [_services insertObject:service atIndex:0];
     NSDictionary *device = @{@"ip": service.host,
                              @"port" : service.port,
@@ -438,8 +448,8 @@ withFilterContext:(id)filterContext
     }
     
     // TODO: remove object with from services with service.uniqueServiceName
-//    [_services removeObject]
-//    [_services insertObject:service atIndex:0];
+    //    [_services removeObject]
+    //    [_services insertObject:service atIndex:0];
     NSDictionary *device = @{@"ip": service.host,
                              @"port" : service.port,
                              @"name" :  service.server,
