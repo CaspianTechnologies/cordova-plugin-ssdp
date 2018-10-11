@@ -8,7 +8,9 @@ const maxAgePattern = new RegExp(/max-age\s*=\s*(\d+)/);
 let cacheTimer = null;
 
 function registerDevice(device) {
+  console.log('registerDevice callback, device:', device);
   if (devices.has(device.usn)) {
+    console.log('registerDevice update cache for usn:', device.usn);
     const registeredDevice = devices.get(device.usn);
     registeredDevice.cacheControl = device.cacheControl;
     registeredDevice.date = new Date();
@@ -29,6 +31,7 @@ function registerDevice(device) {
 }
 
 function unregisterDevice(device) {
+  console.log('unregisterDevice callback, device:', device);
   const registeredDevice = devices.get(device.usn);
   if (!registeredDevice) {
     return;
@@ -42,6 +45,7 @@ function unregisterDevice(device) {
 }
 
 function unregisterDevicesFromGoneNetwork(goneNetworkId) {
+  console.log('unregisterDevicesFromGoneNetwork, network:', goneNetworkId);
   for (let device of devices.values()) {
     if (device.networkId === goneNetworkId.toString()) {
       unregisterDevice(device);
@@ -50,6 +54,7 @@ function unregisterDevicesFromGoneNetwork(goneNetworkId) {
 }
 
 exports.startSearching = function(target) {
+  console.log('startSearching, target:', target);
   return new Promise(function(success, error) {
     if (!cacheTimer) {
       cacheTimer = setInterval(() => {
@@ -80,12 +85,14 @@ exports.startSearching = function(target) {
 };
 
 exports.startAdvertising = function(target, name, usn, port) {
+  console.log('startAdvertising', target, name, usn, port);
   return new Promise(function(success, error) {
     exec(success, error, "SSDP", "startAdvertising", [target, port, name, usn]);
   });
 };
 
 exports.stop = function() {
+  console.log('stop');
   return new Promise(function(success, error) {
     if (cacheTimer) {
       clearInterval(cacheTimer);
