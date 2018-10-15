@@ -67,17 +67,19 @@
                 <param name="ios-package" value="SSDP"/>
             </feature>
         </config-file>
+        <header-file src="src/ios/CocoaAsyncSocket/Source/GCD/GCDAsyncSocket.h" />
+        <header-file src="src/ios/CocoaAsyncSocket/Source/GCD/GCDAsyncUdpSocket.h" />
         <header-file src="src/ios/CocoaSSDP-master/Classes/SSDPService.h" />
         <header-file src="src/ios/CocoaSSDP-master/Classes/SSDPServiceBrowser.h" />
         <header-file src="src/ios/CocoaSSDP-master/Classes/SSDPServiceTypes.h" />
         <header-file src="src/ios/SSDP.h" />
         <header-file src="src/ios/SSDPMessage.h" />
+        <source-file src="src/ios/CocoaAsyncSocket/Source/GCD/GCDAsyncSocket.m" />
+        <source-file src="src/ios/CocoaAsyncSocket/Source/GCD/GCDAsyncUdpSocket.m" />
         <source-file src="src/ios/CocoaSSDP-master/Classes/SSDPService.m" />
         <source-file src="src/ios/CocoaSSDP-master/Classes/SSDPServiceBrowser.m" />
         <source-file src="src/ios/CocoaSSDP-master/Classes/SSDPServiceTypes.m" />
         <source-file src="src/ios/SSDP.m" />
         <source-file src="src/ios/SSDPMessage.m" />
-
-        <framework src="CocoaAsyncSocket" type="podspec" spec="~> 7.6.3" />
     </platform>
 </plugin>

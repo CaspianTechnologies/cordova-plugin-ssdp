@@ -32,14 +32,12 @@
 #import <net/if.h>
 #import <arpa/inet.h>
 
-
 NSString *const SSDPMulticastGroupAddress = @"239.255.255.250";
 int const SSDPMulticastUDPPort = 1900;
 
 NSString *const SSDPVersionString = @"CocoaSSDP/0.1.0";
 NSString *const SSDPResponseStatusKey = @"HTTP-Status";
 NSString *const SSDPRequestMethodKey = @"HTTP-Method";
-
 
 typedef enum : NSUInteger {
     SSDPUnknownMessage,
@@ -135,6 +133,9 @@ typedef enum : NSUInteger {
     NSData *sourceAddress = _networkInterface? interfaces[_networkInterface] : nil;
     if( !sourceAddress ) sourceAddress = [[interfaces allValues] firstObject];
     
+        NSString *interfaceName = [[interfaces allKeys] firstObject];
+        NSLog(@"interface name: %@", interfaceName);
+    
     
     if (![_unicastSocket enableReusePort:YES error:&err]) {
         [self _notifyDelegateWithError:err];
@@ -146,7 +147,9 @@ typedef enum : NSUInteger {
         return;
     }
     
-    if (![_unicastSocket joinMulticastGroup:SSDPMulticastGroupAddress onInterface:[[GCDAsyncUdpSocket class] hostFromAddress:sourceAddress] error:&err]) {
+    if (![_unicastSocket joinMulticastGroup:SSDPMulticastGroupAddress
+                                onInterface:[[GCDAsyncUdpSocket class]
+                            hostFromAddress:sourceAddress] error:&err]) {
         [self _notifyDelegateWithError:err];
         return;
     }
@@ -166,11 +169,13 @@ typedef enum : NSUInteger {
         return;
     }
     
-    if (![_socket joinMulticastGroup:SSDPMulticastGroupAddress onInterface:[[GCDAsyncUdpSocket class] hostFromAddress:sourceAddress] error:&err]) {
+    if (![_socket joinMulticastGroup:SSDPMulticastGroupAddress
+                         onInterface:[[GCDAsyncUdpSocket class]
+                     hostFromAddress:sourceAddress] error:&err]) {
         [self _notifyDelegateWithError:err];
         return;
     }
-        
+    
     if(![_socket beginReceiving:&err]) {
         [self _notifyDelegateWithError:err];
         return;
@@ -337,6 +342,8 @@ typedef enum : NSUInteger {
     struct ifaddrs *interfaces = NULL;
     struct ifaddrs *ifa = NULL;
     
+    
+    // https://github.com/arcam/CocoaUPnP/issues/38
     // retrieve the current interfaces - returns 0 on success
     if( getifaddrs(&interfaces) == 0 ) {
         for( ifa = interfaces; ifa != NULL; ifa = ifa->ifa_next ) {
