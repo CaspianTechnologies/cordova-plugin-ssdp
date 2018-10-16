@@ -5,6 +5,7 @@
 #import "SSDPMessage.h"
 #import "SSDPServiceTypes.h"
 #import "SSDPService.h"
+#import "Reachability.h"
 
 NSString *const SSDPMulticastGroupAddress = @"239.255.255.250";
 int const SSDPMulticastUDPPort = 1900;
@@ -13,10 +14,14 @@ const int BYEBYE_TAG = 1000;
 @interface SSDP () {
     SSDPServiceBrowser *_browser;
     
-    NSString* deviceDiscoveredCallbackId;
-    NSString* deviceGoneCallbackId;
-    NSString* setDeviceGoneCallbackId;
-    NSString* stopCallbackId;
+    NetworkStatus currentNetworkStatus;
+    NSString *lastNetworkId;
+    Reachability* reachability;
+    NSString *deviceDiscoveredCallbackId;
+    NSString *deviceGoneCallbackId;
+    NSString *networkGoneCallbackId;
+    NSString *setDeviceGoneCallbackId;
+    NSString *stopCallbackId;
     GCDAsyncUdpSocket *multicastSocket;
     GCDAsyncUdpSocket *unicastSocket;
     BOOL isRunning;
@@ -30,7 +35,7 @@ const int BYEBYE_TAG = 1000;
 
 @implementation SSDP
 
--(NSString *)getCurrentWIFIName {
+-(NSString *)getCurrentWiFiName {
     NSString *wifiName = nil;
     NSArray *interFaceNames = (__bridge_transfer NSArray *)CNCopySupportedInterfaces();
     
@@ -40,7 +45,7 @@ const int BYEBYE_TAG = 1000;
         if (info && info[@"SSID"]) {
             wifiName = info[@"SSID"];
         } else {
-            wifiName = @"UNKNOWN";
+            wifiName = [[UIDevice currentDevice] name]; // for personal hotspot info is null
         }
     }
     
@@ -59,6 +64,23 @@ const int BYEBYE_TAG = 1000;
         
         target = [command.arguments objectAtIndex:0];
         
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(handleNetworkChangeForSearching:)
+                                                     name:kReachabilityChangedNotification object:nil];
+        reachability = [Reachability reachabilityForInternetConnection];
+        [reachability startNotifier];
+        NetworkStatus remoteHostStatus = [reachability currentReachabilityStatus];
+        currentNetworkStatus = remoteHostStatus;
+        
+        NSDictionary *availableInterfaces = [SSDPServiceBrowser availableNetworkInterfaces];
+        if (currentNetworkStatus == NotReachable) {
+            return;
+        }
+        
+        if (currentNetworkStatus == ReachableViaWWAN && !availableInterfaces[@"bridge100"]) {
+            return;
+        }
+        
         if (_browser) {
             [_browser stopBrowsingForServices];
         } else {
@@ -73,7 +95,48 @@ const int BYEBYE_TAG = 1000;
     }];
 }
 
+- (void) handleNetworkChangeForAdvertising:(NSNotification *)notice
+{
+    currentNetworkStatus = [reachability currentReachabilityStatus];
+    [self restartAdvertising];
+}
+
+- (void) handleNetworkChangeForSearching:(NSNotification *)notice
+{
+    currentNetworkStatus = [reachability currentReachabilityStatus];
+    
+    CDVPluginResult* pluginResult = nil;
+    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:lastNetworkId];
+    [pluginResult setKeepCallbackAsBool:YES];
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:networkGoneCallbackId];
+    
+    [self restartSearching];
+}
+
 -(void)restartSearching {
+    currentNetworkStatus = [reachability currentReachabilityStatus];
+    NSDictionary *availableInterfaces = [SSDPServiceBrowser availableNetworkInterfaces];
+    if (currentNetworkStatus == NotReachable) {
+        if (_browser) {
+            [_browser stopBrowsingForServices];
+        }
+        return;
+    }
+    
+    if (currentNetworkStatus == ReachableViaWWAN && !availableInterfaces[@"bridge100"]) {
+        if (_browser) {
+            [_browser stopBrowsingForServices];
+        }
+        return;
+    }
+    
+    if (currentNetworkStatus == ReachableViaWiFi && [availableInterfaces count] == 0) {
+        [NSTimer scheduledTimerWithTimeInterval:3 repeats:NO block:^(NSTimer *timer){
+            [self restartSearching];
+        }];
+        return;
+    }
+    
     if (_browser) {
         [_browser stopBrowsingForServices];
     } else {
@@ -103,6 +166,25 @@ const int BYEBYE_TAG = 1000;
     } else {
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error.localizedDescription];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+    }
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleNetworkChangeForAdvertising:)
+                                                 name:kReachabilityChangedNotification object:nil];
+    reachability = [Reachability reachabilityForInternetConnection];
+    [reachability startNotifier];
+    NetworkStatus remoteHostStatus = [reachability currentReachabilityStatus];
+    if(remoteHostStatus == NotReachable)
+    {
+        NSLog(@"no");
+    }
+    else if (remoteHostStatus == ReachableViaWiFi)
+    {
+        NSLog(@"wifi");
+    }
+    else if (remoteHostStatus == ReachableViaWWAN)
+    {
+        NSLog(@"cell");
     }
 }
 
@@ -220,12 +302,6 @@ withFilterContext:(id)filterContext
         return;
     }
     
-    //    NSString *host = @"";
-    //    UInt16 port1 = 0;
-    //    [GCDAsyncUdpSocket getHost:&host port:&port1 fromAddress:address];
-    //    NSLog(@"host: %@",host);
-    //    NSLog(@"port: %i",port1);
-    
     NSString *msg = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
     if (msg)
     {
@@ -278,10 +354,7 @@ withFilterContext:(id)filterContext
 }
 
 - (void)setNetworkGoneCallback:(CDVInvokedUrlCommand*)command {
-    //    CDVPluginResult* pluginResult = nil;
-    
-    // [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
-    
+   networkGoneCallbackId = command.callbackId;
 }
 
 - (void)setDeviceDiscoveredCallback:(CDVInvokedUrlCommand*)command {
@@ -327,8 +400,9 @@ withFilterContext:(id)filterContext
 
 - (void) ssdpBrowser:(SSDPServiceBrowser *)browser didNotStartBrowsingForServices:(NSError *)error {
     NSLog(@"SSDP Browser got error: %@", error);
-    //    UIAlertView *alert = [[UIAlertView alloc] initWithTitle:error.domain message:error.localizedDescription delegate:self cancelButtonTitle:@"Ok" otherButtonTitles:nil];
-    //    [alert show];
+    [NSTimer scheduledTimerWithTimeInterval:3 repeats:NO block:^(NSTimer *timer){
+        [self restartSearching];
+    }];
 }
 
 - (void) ssdpBrowser:(SSDPServiceBrowser *)browser didFindService:(SSDPService *)service {
@@ -338,22 +412,27 @@ withFilterContext:(id)filterContext
         return;
     }
     
+    NSString *currentWiFiName = [self getCurrentWiFiName];
+    if (![lastNetworkId isEqualToString:currentWiFiName]) {
+        CDVPluginResult* pluginResult = nil;
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:lastNetworkId];
+        [pluginResult setKeepCallbackAsBool:YES];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:networkGoneCallbackId];
+    }
+    
+    lastNetworkId = currentWiFiName;
     NSDictionary *device = @{@"ip": service.host,
                              @"port" : service.port,
                              @"name" :  service.server,
                              @"usn" :  service.uniqueServiceName,
                              @"cacheControl" : service.cacheControl,
-                             @"networkId" : [self getCurrentWIFIName]};
-    
-//    NSLog(@"device: %@", device);
+                             @"networkId" : lastNetworkId};
     
     CDVPluginResult* pluginResult = nil;
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:device];
     [pluginResult setKeepCallbackAsBool:YES];
     [self.commandDelegate sendPluginResult:pluginResult callbackId:deviceDiscoveredCallbackId];
-    
-    // NSIndexPath *indexPath = [NSIndexPath indexPathForRow:0 inSection:0];
-    // TODO: [self.tableView insertRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
+
 }
 
 - (void) ssdpBrowser:(SSDPServiceBrowser *)browser didRemoveService:(SSDPService *)service {
@@ -362,16 +441,11 @@ withFilterContext:(id)filterContext
         return;
     }
     
-    // TODO: remove object with from services with service.uniqueServiceName
-    //    [_services removeObject]
-    //    [_services insertObject:service atIndex:0];
     NSDictionary *device = @{@"ip": service.host,
                              @"port" : service.port,
                              @"name" :  service.server,
                              @"usn" :  service.uniqueServiceName,
-                             @"networkId" : [self getCurrentWIFIName]};
-    
-    NSLog(@"device: %@", device);
+                             @"networkId" : [self getCurrentWiFiName]};
     
     CDVPluginResult* pluginResult = nil;
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:device];
