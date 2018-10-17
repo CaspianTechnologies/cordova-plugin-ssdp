@@ -83,5 +83,12 @@
         <source-file src="src/ios/CocoaSSDP-master/Classes/SSDPServiceTypes.m" />
         <source-file src="src/ios/SSDP.m" />
         <source-file src="src/ios/SSDPMessage.m" />
+
+        <config-file parent="com.apple.developer.networking.wifi-info" target="*/Entitlements-Debug.plist">
+            <true/>
+        </config-file>
+        <config-file parent="com.apple.developer.networking.wifi-info" target="*/Entitlements-Release.plist">
+            <true/>
+        </config-file>
     </platform>
 </plugin>
