@@ -1,6 +1,8 @@
 {
   "name": "cordova-plugin-ssdp",
   "version": "0.0.1",
+  "author": "Caspian Technologies PTE. LTD.",
+  "license": "gpl-3.0",
   "description": "SSDP cordova plugin",
   "cordova": {
     "id": "cordova-plugin-ssdp",
