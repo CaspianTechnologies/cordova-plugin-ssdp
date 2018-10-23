@@ -60,6 +60,9 @@
                     <Button x:Name="ListenSSDP" Click="ListenSSDP_Click" Content="Listen SSDP"/>
                 </StackPanel>
                 <ListView x:Name="Devices" Header="Discovered devices:"/>
+                <TextBox x:Name="IsAvailable" Header="Is Wi-Fi available"/>
+                <TextBox x:Name="IsEnabled" Header="Is Wi-Fi enabled"/>
+                <TextBox x:Name="IsConnected" Header="Is Wi-Fi connected"/>
             </StackPanel>
         </Grid>
 
