@@ -46,14 +46,12 @@ namespace Client
             eventTimer.Tick += async (s, t) =>
             {
                 logger.WriteLine(t.ToString());
-                //IsAvailable.Text = (await wiFiInfo.IsAvailable()).ToString();
+                IsAvailable.Text = (await wiFiInfo.IsAvailable()).ToString();
                 IsEnabled.Text = (await wiFiInfo.IsEnabled()).ToString();
                 IsConnected.Text = (await wiFiInfo.IsConnected()).ToString();
             };
 
-            wiFiInfo.AvailabilityChanged += (s, a) => IsAvailable.Text = a.Available ? "Available" : "Unavailable";
-
-            Loaded += (s, e) =>
+            Loaded += async (s, e) =>
             {
                 try
                 {
@@ -65,6 +63,14 @@ namespace Client
                     LocalIp.Text = "Error";
                     logger.WriteLine(ex.ToString());
                 }
+
+                IsAvailable.Text = (await wiFiInfo.IsAvailable()) ? "Available" : "Unavailable";
+                IsEnabled.Text = (await wiFiInfo.IsEnabled()) ? "Enabled" : "Disabled";
+                IsConnected.Text = (await wiFiInfo.IsConnected()) ? "Connected" : "Disconnected";
+
+                wiFiInfo.AvailabilityChanged += (s2, a) => IsAvailable.Text = a.Available ? "Available" : "Unavailable";
+                wiFiInfo.AdapterStatusChanged += (s2, a) => IsEnabled.Text = a.Enabled ? "Enabled" : "Disabled";
+                wiFiInfo.ConnectionChanged += (s2, a) => IsConnected.Text = a.Connected ? "Connected" : "Disconnected";
             };
         }
 
