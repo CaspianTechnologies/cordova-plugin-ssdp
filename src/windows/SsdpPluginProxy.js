@@ -1,8 +1,15 @@
 let controlPoint;
+let wiFiInfo;
 
 function initializeControlPoint() {
     if (!controlPoint) {
         controlPoint = new SSDP.ControlPoint();
+    }
+}
+
+function initializeWiFiInfo() {
+    if (!wiFiInfo) {
+        wiFiInfo = new SSDP.WiFiInfo();
     }
 }
 
@@ -15,6 +22,21 @@ module.exports = {
             .then(function () {
                 controlPoint.searchDevices().then(success, error);
             }, error);
+    },
+
+    isAvailable: function (success, error, params) {
+        initializeWiFiInfo();
+        wiFiInfo.isAvailable().then(success, error);
+    },
+
+    isEnabled: function (success, error, params) {
+        initializeWiFiInfo();
+        wiFiInfo.isEnabled().then(success, error);
+    },
+
+    isConnected: function (success, error, params) {
+        initializeWiFiInfo();
+        wiFiInfo.isConnected().then(success, error);
     },
 
     setDeviceDiscoveredCallback: function (_1, _2, params) {
@@ -33,6 +55,24 @@ module.exports = {
         initializeControlPoint();
         const callback = params[0];
         controlPoint.addEventListener('networkgone', callback);
+    },
+
+    setAvailabilityChangedCallback: function (_1, _2, params) {
+        initializeWiFiInfo();
+        const callback = params[0];
+        wiFiInfo.addEventListener('availabilitychanged', callback);
+    },
+
+    setAdapterStatusChangedCallback: function (_1, _2, params) {
+        initializeWiFiInfo();
+        const callback = params[0];
+        wiFiInfo.addEventListener('adapterstatuschanged', callback);
+    },
+
+    setConnectionChangedCallback: function (_1, _2, params) {
+        initializeWiFiInfo();
+        const callback = params[0];
+        wiFiInfo.addEventListener('connectionchanged', callback);
     },
 
     stop: function (success, error, params) {

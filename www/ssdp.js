@@ -3,6 +3,9 @@ const exec = require('cordova/exec');
 const devices = new Map();
 let deviceDiscoveredClientCallback = null;
 let deviceGoneClientCallback = null;
+let availabilityChangedCallback = null;
+let adapterStatusChangedCallback = null;
+let connectionChangedCallback = null;
 
 const maxAgePattern = new RegExp(/max-age\s*=\s*(\d+)/);
 let cacheTimer = null;
@@ -50,6 +53,24 @@ function unregisterDevicesFromGoneNetwork(goneNetworkId) {
     if (device.networkId === goneNetworkId.toString()) {
       unregisterDevice(device);
     }
+  }
+}
+
+function notifyAvailabilityChanged(event) {
+  if (availabilityChangedCallback) {
+    availabilityChangedCallback(event.available);
+  }
+}
+
+function notifyAdapterStatusChanged(event) {
+  if (adapterStatusChangedCallback) {
+    adapterStatusChangedCallback(event.enabled);
+  }
+}
+
+function notifyConnectionChanged(event) {
+  if (connectionChangedCallback) {
+    connectionChangedCallback(event.connected);
   }
 }
 
@@ -116,14 +137,35 @@ exports.setDeviceGoneCallback = function(callback) {
   exec(unregisterDevice, null, "SSDP", "setDeviceGoneCallback", [unregisterDevice]);
 };
 
+exports.setAvailabilityChangedCallback = function(callback) {
+  availabilityChangedCallback = callback;
+  exec(notifyAvailabilityChanged, null, "SSDP", "setAvailabilityChangedCallback", [notifyAvailabilityChanged]);
+};
+
+exports.setAdapterStatusChangedCallback = function(callback) {
+  adapterStatusChangedCallback = callback;
+  exec(notifyAdapterStatusChanged, null, "SSDP", "setAdapterStatusChangedCallback", [notifyAdapterStatusChanged]);
+};
+
+exports.setConnectionChangedCallback = function(callback) {
+  connectionChangedCallback = callback;
+  exec(notifyConnectionChanged, null, "SSDP", "setConnectionChangedCallback", [notifyConnectionChanged]);
+};
+
 exports.isAvailable = function() {
-  exec(success, error, "SSDP", "isAvailable", []);
+  return new Promise(function(success, error) {
+    exec(success, error, "SSDP", "isAvailable", []);
+  });
 };
 
 exports.isEnabled = function() {
-  exec(success, error, "SSDP", "isEnabled", []);
+  return new Promise(function(success, error) {
+    exec(success, error, "SSDP", "isEnabled", []);
+  });
 };
 
 exports.isConnected = function() {
-  exec(success, error, "SSDP", "isConnected", []);
+  return new Promise(function(success, error) {
+    exec(success, error, "SSDP", "isConnected", []);
+  });
 };
