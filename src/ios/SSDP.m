@@ -14,13 +14,15 @@ const int BYEBYE_TAG = 1000;
 @interface SSDP () {
     SSDPServiceBrowser *_browser;
     
-    NetworkStatus currentNetworkStatus;
     NSString *lastNetworkId;
     Reachability* reachability;
     NSString *deviceDiscoveredCallbackId;
     NSString *deviceGoneCallbackId;
     NSString *networkGoneCallbackId;
-    NSString *setDeviceGoneCallbackId;
+    NSString *availabilityChangedCallbackId;
+    NSString *adapterStatusChangedCallbackId;
+    NSString *connectionChangedCallbackId;
+    
     NSString *stopCallbackId;
     GCDAsyncUdpSocket *multicastSocket;
     GCDAsyncUdpSocket *unicastSocket;
@@ -31,6 +33,9 @@ const int BYEBYE_TAG = 1000;
     NSNumber *port;
     NSString *name;
 }
+
+@property (nonatomic) NetworkStatus currentNetworkStatus;
+
 @end
 
 @implementation SSDP
@@ -52,32 +57,28 @@ const int BYEBYE_TAG = 1000;
     return wifiName;
 }
 
+-(void)stopReachability {
+    [reachability stopNotifier];
+}
+
 - (void)startSearching:(CDVInvokedUrlCommand*)command {
     NSLog(@"starting search");
     
     [self.commandDelegate runInBackground:^{
         
-        [[NSNotificationCenter defaultCenter]addObserver:self
-                                                selector:@selector(restartSearching)
-                                                    name:UIApplicationDidBecomeActiveNotification
-                                                  object:nil];
+        [self addSearchingObservers];
         
         target = [command.arguments objectAtIndex:0];
         
-        [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(handleNetworkChangeForSearching:)
-                                                     name:kReachabilityChangedNotification object:nil];
-        reachability = [Reachability reachabilityForInternetConnection];
-        [reachability startNotifier];
-        NetworkStatus remoteHostStatus = [reachability currentReachabilityStatus];
-        currentNetworkStatus = remoteHostStatus;
+        
+        self.currentNetworkStatus = [reachability currentReachabilityStatus];
         
         NSDictionary *availableInterfaces = [SSDPServiceBrowser availableNetworkInterfaces];
-        if (currentNetworkStatus == NotReachable) {
+        if (self.currentNetworkStatus == NotReachable) {
             return;
         }
         
-        if (currentNetworkStatus == ReachableViaWWAN && !availableInterfaces[@"bridge100"]) {
+        if (self.currentNetworkStatus == ReachableViaWWAN && !availableInterfaces[@"bridge100"]) {
             return;
         }
         
@@ -95,18 +96,36 @@ const int BYEBYE_TAG = 1000;
     }];
 }
 
+-(void) invokeConnectionChangedCallback {
+    
+    if (connectionChangedCallbackId.length == 0) {
+        return;
+    }
+    
+    self.currentNetworkStatus = [reachability currentReachabilityStatus];
+    NSDictionary *availableInterfaces = [SSDPServiceBrowser availableNetworkInterfaces];
+    bool isConnected = (self.currentNetworkStatus == ReachableViaWiFi || ((self.currentNetworkStatus == ReachableViaWWAN) && availableInterfaces[@"bridge100"]));
+    CDVPluginResult* pluginResult = nil;
+    NSDictionary *result = @{@"connected" : @(isConnected), @"adapterId" : @"IOS_ADAPTER", @"wifiName": [self getCurrentWiFiName]};
+    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:result];
+    [pluginResult setKeepCallbackAsBool:YES];
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:connectionChangedCallbackId];
+}
+
 - (void) handleNetworkChangeForAdvertising:(NSNotification *)notice
 {
-    currentNetworkStatus = [reachability currentReachabilityStatus];
+    self.currentNetworkStatus = [reachability currentReachabilityStatus];
+    [self invokeConnectionChangedCallback];
+    
     [self restartAdvertising];
 }
 
 - (void) handleNetworkChangeForSearching:(NSNotification *)notice
 {
-    currentNetworkStatus = [reachability currentReachabilityStatus];
-    
-    CDVPluginResult* pluginResult = nil;
-    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:lastNetworkId];
+    [self invokeConnectionChangedCallback];
+
+    self.currentNetworkStatus = [reachability currentReachabilityStatus];
+    CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:lastNetworkId];
     [pluginResult setKeepCallbackAsBool:YES];
     [self.commandDelegate sendPluginResult:pluginResult callbackId:networkGoneCallbackId];
     
@@ -114,23 +133,25 @@ const int BYEBYE_TAG = 1000;
 }
 
 -(void)restartSearching {
-    currentNetworkStatus = [reachability currentReachabilityStatus];
+    [reachability startNotifier];
+    self.currentNetworkStatus = [reachability currentReachabilityStatus];
+    
     NSDictionary *availableInterfaces = [SSDPServiceBrowser availableNetworkInterfaces];
-    if (currentNetworkStatus == NotReachable) {
+    if (self.currentNetworkStatus == NotReachable) {
         if (_browser) {
             [_browser stopBrowsingForServices];
         }
         return;
     }
     
-    if (currentNetworkStatus == ReachableViaWWAN && !availableInterfaces[@"bridge100"]) {
+    if (self.currentNetworkStatus == ReachableViaWWAN && !availableInterfaces[@"bridge100"]) {
         if (_browser) {
             [_browser stopBrowsingForServices];
         }
         return;
     }
     
-    if (currentNetworkStatus == ReachableViaWiFi && [availableInterfaces count] == 0) {
+    if (self.currentNetworkStatus == ReachableViaWiFi && [availableInterfaces count] == 0) {
         [NSTimer scheduledTimerWithTimeInterval:3 repeats:NO block:^(NSTimer *timer){
             [self restartSearching];
         }];
@@ -146,13 +167,68 @@ const int BYEBYE_TAG = 1000;
     [_browser startBrowsingForServices:target];
 }
 
-- (void)startAdvertising:(CDVInvokedUrlCommand*)command {
-    CDVPluginResult* pluginResult = nil;
+-(void)addSearchingObservers {
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                 name:UIApplicationWillResignActiveNotification
+                                               object:nil];
+    
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                name:UIApplicationDidBecomeActiveNotification
+                                              object:nil];
+    
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                 name:kReachabilityChangedNotification object:nil];
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(stopReachability)
+                                                 name:UIApplicationWillResignActiveNotification
+                                               object:nil];
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                            selector:@selector(restartSearching)
+                                                name:UIApplicationDidBecomeActiveNotification
+                                              object:nil];
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleNetworkChangeForSearching:)
+                                                 name:kReachabilityChangedNotification object:nil];
+    reachability = [Reachability reachabilityForInternetConnection];
+    [reachability startNotifier];
+}
+
+-(void)addAdvertisingObservers {
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:UIApplicationWillResignActiveNotification
+                                                  object:nil];
+    
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:UIApplicationDidBecomeActiveNotification
+                                                  object:nil];
+    
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:kReachabilityChangedNotification object:nil];
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(stopReachability)
+                                                 name:UIApplicationWillResignActiveNotification
+                                               object:nil];
     
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(restartAdvertising)
                                                  name:UIApplicationDidBecomeActiveNotification
                                                object:nil];
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleNetworkChangeForAdvertising:)
+                                                 name:kReachabilityChangedNotification object:nil];
+    reachability = [Reachability reachabilityForInternetConnection];
+    [reachability startNotifier];
+}
+
+- (void)startAdvertising:(CDVInvokedUrlCommand*)command {
+    [self addAdvertisingObservers];
+    
+    CDVPluginResult* pluginResult = nil;
     
     target = [command.arguments objectAtIndex:0];
     port = [command.arguments objectAtIndex:1];
@@ -168,11 +244,6 @@ const int BYEBYE_TAG = 1000;
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     }
     
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(handleNetworkChangeForAdvertising:)
-                                                 name:kReachabilityChangedNotification object:nil];
-    reachability = [Reachability reachabilityForInternetConnection];
-    [reachability startNotifier];
     NetworkStatus remoteHostStatus = [reachability currentReachabilityStatus];
     if(remoteHostStatus == NotReachable)
     {
@@ -248,6 +319,7 @@ const int BYEBYE_TAG = 1000;
 }
 
 -(void)restartAdvertising {
+    [reachability startNotifier];
     if (multicastSocket) {
         [multicastSocket close];
         multicastSocket = nil;
@@ -451,6 +523,42 @@ withFilterContext:(id)filterContext
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:device];
     [pluginResult setKeepCallbackAsBool:YES];
     [self.commandDelegate sendPluginResult:pluginResult callbackId:deviceGoneCallbackId];
+}
+
+- (void)setAvailabilityChangedCallback:(CDVInvokedUrlCommand*)command {
+    availabilityChangedCallbackId = command.callbackId;
+}
+
+- (void)setAdapterStatusChangedCallback:(CDVInvokedUrlCommand*)command {
+    adapterStatusChangedCallbackId = command.callbackId;
+
+}
+
+- (void)setConnectionChangedCallback:(CDVInvokedUrlCommand*)command {
+    connectionChangedCallbackId = command.callbackId;
+}
+
+- (void)isAvailable:(CDVInvokedUrlCommand*)command {
+    CDVPluginResult* pluginResult = nil;
+    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsBool:true];
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
+- (void)isEnabled:(CDVInvokedUrlCommand*)command {
+    NSDictionary *availableInterfaces = [SSDPServiceBrowser availableNetworkInterfaces];
+    bool isEnabled = availableInterfaces[@"en0"] || availableInterfaces[@"bridge100"] ? true : false;
+    CDVPluginResult* pluginResult = nil;
+    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsBool:isEnabled];
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
+- (void)isConnected:(CDVInvokedUrlCommand*)command {
+    NSDictionary *availableInterfaces = [SSDPServiceBrowser availableNetworkInterfaces];
+    NetworkStatus remoteHostStatus = [reachability currentReachabilityStatus];
+    bool isConnected = (remoteHostStatus == ReachableViaWiFi || ((remoteHostStatus == ReachableViaWWAN) && availableInterfaces[@"bridge100"]));
+    CDVPluginResult* pluginResult = nil;
+    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsBool:isConnected];
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
 @end
