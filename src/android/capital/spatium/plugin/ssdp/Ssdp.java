@@ -1,6 +1,9 @@
 package capital.spatium.plugin.ssdp;
 
+import android.content.Context;
+import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
+import android.net.wifi.WifiManager;
 import android.util.Log;
 
 import org.apache.cordova.CallbackContext;
@@ -10,6 +13,7 @@ import org.apache.cordova.CordovaWebView;
 import org.apache.cordova.PluginResult;
 import org.json.JSONArray;
 import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -20,6 +24,7 @@ import java.util.Enumeration;
 
 import capital.spatium.plugin.ssdp.network.NetworkChangeReceiver;
 import capital.spatium.plugin.ssdp.network.NetworkUtil;
+import capital.spatium.plugin.ssdp.network.WifiChangeStateReceiver;
 
 public class Ssdp extends CordovaPlugin {
     private MulticastThread thread;
@@ -27,6 +32,8 @@ public class Ssdp extends CordovaPlugin {
     private CallbackContext mDeviceDiscoveredCallback = null;
     private CallbackContext mDeviceGoneCallback = null;
     private CallbackContext mNetworkGoneCallback = null;
+    private CallbackContext mChangeWifiAdapterStatusCallback = null;
+    private CallbackContext mChangeWifiConnectionCallback = null;
 
     private static final String MAX_AGE = "max-age = 30";
 
@@ -37,8 +44,10 @@ public class Ssdp extends CordovaPlugin {
     private static final int MSEARCH_PERIOD = 1000;
 
     private static final String TAG = "Cordova SSDP";
+    private static final String ADAPTER_ID = "WLAN0";
 
     private NetworkChangeReceiver mReceiver;
+    private WifiChangeStateReceiver mWifiStateReceiver;
 
     @Override
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
@@ -47,6 +56,11 @@ public class Ssdp extends CordovaPlugin {
         mReceiver = new NetworkChangeReceiver(cordova.getActivity());
         mReceiver.setNetworkChangeConsumer(new NetworkChangeConsumer(mReceiver.getCurrentNetworkInfo()));
         mReceiver.register();
+
+        mWifiStateReceiver = new WifiChangeStateReceiver(cordova.getActivity());
+        mWifiStateReceiver.setWifiAdapterChangedConsumer(new WifiAdapterChangedConsumer());
+        mWifiStateReceiver.setWifiConnectionChangedConsumer(new WifiConnectionChangedConsumer());
+        mWifiStateReceiver.register();
     }
 
     @Override
@@ -62,6 +76,23 @@ public class Ssdp extends CordovaPlugin {
             return true;
         } else if (action.equals("stop")) {
             stop(args, callbackContext);
+            return true;
+        } else if (action.equals("isAvailable")) {
+            isAvailable(callbackContext);
+            return true;
+        } else if (action.equals("isEnabled")) {
+            isEnabled(callbackContext);
+            return true;
+        } else if (action.equals("isConnected")) {
+            isConnected(callbackContext);
+            return true;
+        } else if (action.equals("setAvailabilityChangedCallback")) {
+            return true;
+        } else if (action.equals("setAdapterStatusChangedCallback")){
+            setAdapterStatusChangedCallback(callbackContext);
+            return true;
+        } else if (action.equals("setConnectionChangedCallback")) {
+            setConnectionChangedCallback(callbackContext);
             return true;
         } else if (action.equals("setDeviceDiscoveredCallback")) {
             setDeviceDiscoveredCallback(callbackContext);
@@ -86,6 +117,7 @@ public class Ssdp extends CordovaPlugin {
             thread.interrupt();
         }
         mReceiver.unregister();
+        mWifiStateReceiver.unregister();
         super.onDestroy();
     }
 
@@ -134,6 +166,29 @@ public class Ssdp extends CordovaPlugin {
         callbackContext.sendPluginResult(result);
     }
 
+    private void isAvailable(final CallbackContext callbackContext) {
+        PluginResult result = new PluginResult(PluginResult.Status.OK, true);
+        callbackContext.sendPluginResult(result);
+    }
+
+    private void isEnabled(final CallbackContext callbackContext) {
+        WifiManager mWifi =(WifiManager)cordova.getContext().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        boolean isEnabled = mWifi != null && mWifi.isWifiEnabled();
+        PluginResult result = new PluginResult(PluginResult.Status.OK, isEnabled);
+        callbackContext.sendPluginResult(result);
+    }
+
+    private void isConnected(final CallbackContext callbackContext) {
+        boolean isConnected = false;
+        ConnectivityManager connManager = (ConnectivityManager) cordova.getContext().getApplicationContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+        if(connManager != null) {
+            NetworkInfo mWifi = connManager.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
+            isConnected = mWifi.isConnected();
+        }
+        PluginResult result = new PluginResult(PluginResult.Status.OK, isConnected);
+        callbackContext.sendPluginResult(result);
+    }
+
     private void setDeviceDiscoveredCallback(final CallbackContext callbackContext) {
         mDeviceDiscoveredCallback = callbackContext;
     }
@@ -144,6 +199,14 @@ public class Ssdp extends CordovaPlugin {
 
     private void setNetworkGoneCallback(final CallbackContext callbackContext) {
         mNetworkGoneCallback = callbackContext;
+    }
+
+    private void setAdapterStatusChangedCallback(final CallbackContext callbackContext) {
+        mChangeWifiAdapterStatusCallback = callbackContext;
+    }
+
+    private void setConnectionChangedCallback(final CallbackContext callbackContext) {
+        mChangeWifiConnectionCallback = callbackContext;
     }
 
     private boolean containsTarget(SsdpMessage message, String target) {
@@ -426,6 +489,55 @@ public class Ssdp extends CordovaPlugin {
                     mSsdpService.close();
                 }
             }
+        }
+    }
+
+    private class WifiAdapterChangedConsumer implements Consumer<Boolean> {
+
+        @Override
+        public void accept(Boolean enabled) {
+            if(mChangeWifiAdapterStatusCallback == null)
+                return;
+
+            JSONObject jsonResult = new JSONObject();
+            try {
+                jsonResult.put("enabled", enabled);
+                jsonResult.put("adapterId", ADAPTER_ID);
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+
+            PluginResult result = new PluginResult(PluginResult.Status.OK, jsonResult);
+            result.setKeepCallback(true);
+            mChangeWifiAdapterStatusCallback.sendPluginResult(result);
+        }
+    }
+
+    private class WifiConnectionChangedConsumer implements Consumer<NetworkInfo> {
+
+        @Override
+        public void accept(NetworkInfo networkInfo) {
+            if(mChangeWifiConnectionCallback == null)
+                return;
+
+            NetworkInfo.State wifiState = networkInfo.getState();
+            if(wifiState != NetworkInfo.State.CONNECTED && wifiState != NetworkInfo.State.DISCONNECTED)
+                return;
+
+            JSONObject jsonResult = new JSONObject();
+            try {
+                jsonResult.put("connected", networkInfo.getState() == NetworkInfo.State.CONNECTED);
+                jsonResult.put("adapterId", ADAPTER_ID);
+                if(wifiState == NetworkInfo.State.CONNECTED) {
+                    jsonResult.put("wifiName", networkInfo.getExtraInfo());
+                }
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+
+            PluginResult result = new PluginResult(PluginResult.Status.OK, jsonResult);
+            result.setKeepCallback(true);
+            mChangeWifiConnectionCallback.sendPluginResult(result);
         }
     }
 

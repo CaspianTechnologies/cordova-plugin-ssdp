@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='utf-8'?>
-<plugin xmlns:android="http://schemas.android.com/apk/res/android" id="cordova-plugin-ssdp" version="0.0.1"
+<plugin xmlns:android="http://schemas.android.com/apk/res/android" id="cordova-plugin-ssdp" version="0.0.2"
         xmlns="http://apache.org/cordova/ns/plugins/1.0">
     <name>SSDP</name>
     <description>SSDP plugin</description>
@@ -38,9 +38,10 @@
                      target-dir="src/capital/spatium/plugin/ssdp"/>
         <source-file src="src/android/capital/spatium/plugin/ssdp/Device.java"
                      target-dir="src/capital/spatium/plugin/ssdp"/>
-        <source-file
-                src="src/android/capital/spatium/plugin/ssdp/network/NetworkChangeReceiver.java"
-                target-dir="src/capital/spatium/plugin/ssdp/network"/>
+        <source-file src="src/android/capital/spatium/plugin/ssdp/network/NetworkChangeReceiver.java"
+                     target-dir="src/capital/spatium/plugin/ssdp/network"/>
+        <source-file src="src/android/capital/spatium/plugin/ssdp/network/WifiChangeStateReceiver.java"
+                     target-dir="src/capital/spatium/plugin/ssdp/network"/>
         <source-file src="src/android/capital/spatium/plugin/ssdp/network/NetworkUtil.java"
                      target-dir="src/capital/spatium/plugin/ssdp/network"/>
     </platform>
@@ -52,6 +53,7 @@
                 <Capability Name="internetClient"/>
                 <Capability Name="internetClientServer"/>
                 <Capability Name="privateNetworkClientServer"/>
+                <Capability Name="wiFiControl"/>
             </feature>
         </config-file>
         <js-module src="src/windows/SsdpPluginProxy.js" name="SsdpPluginProxy">

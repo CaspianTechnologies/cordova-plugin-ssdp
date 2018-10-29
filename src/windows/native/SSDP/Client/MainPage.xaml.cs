@@ -23,12 +23,14 @@ namespace Client
         private EventTimer eventTimer;
         private ILogger logger;
         private DatagramSocket socket;
+        private WiFiInfo wiFiInfo;
 
         public MainPage()
         {
             InitializeComponent();
 
             logger = new TextBoxLogger(svLog, TbLog);
+            wiFiInfo = new WiFiInfo(logger);
 
             controlPoint = new ControlPoint(logger) { Target = "spatium" };
             controlPoint.DeviceDiscovered += DiscoveredCallback;
@@ -41,12 +43,15 @@ namespace Client
                 Port = 12345
             };
             eventTimer = new EventTimer(logger);
-            eventTimer.Tick += (s, t) =>
+            eventTimer.Tick += async (s, t) =>
             {
                 logger.WriteLine(t.ToString());
+                IsAvailable.Text = (await wiFiInfo.IsAvailable()).ToString();
+                IsEnabled.Text = (await wiFiInfo.IsEnabled()).ToString();
+                IsConnected.Text = (await wiFiInfo.IsConnected()).ToString();
             };
 
-            Loaded += (s, e) =>
+            Loaded += async (s, e) =>
             {
                 try
                 {
@@ -58,6 +63,14 @@ namespace Client
                     LocalIp.Text = "Error";
                     logger.WriteLine(ex.ToString());
                 }
+
+                IsAvailable.Text = (await wiFiInfo.IsAvailable()) ? "Available" : "Unavailable";
+                IsEnabled.Text = (await wiFiInfo.IsEnabled()) ? "Enabled" : "Disabled";
+                IsConnected.Text = (await wiFiInfo.IsConnected()) ? "Connected" : "Disconnected";
+
+                wiFiInfo.AvailabilityChanged += (s2, a) => IsAvailable.Text = a.Available ? "Available" : "Unavailable";
+                wiFiInfo.AdapterStatusChanged += (s2, a) => IsEnabled.Text = a.Enabled ? "Enabled" : "Disabled";
+                wiFiInfo.ConnectionChanged += (s2, a) => IsConnected.Text = a.Connected ? "Connected" : "Disconnected";
             };
         }
 

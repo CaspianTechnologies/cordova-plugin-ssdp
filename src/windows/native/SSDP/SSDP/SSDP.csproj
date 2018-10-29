@@ -107,6 +107,9 @@
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="AdapterStatusChangedEvent.cs" />
+    <Compile Include="AvailabilityChangedEvent.cs" />
+    <Compile Include="ConnectionChangedEvent.cs" />
     <Compile Include="Device.cs" />
     <Compile Include="DictionaryExtensions.cs" />
     <Compile Include="EventTimer.cs" />
@@ -122,6 +125,7 @@
     <Compile Include="SsdpMessage.cs" />
     <Compile Include="SubnetMask.cs" />
     <Compile Include="SystemLogger.cs" />
+    <Compile Include="WiFiInfo.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NETCore.UniversalWindowsPlatform">

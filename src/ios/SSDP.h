@@ -18,5 +18,13 @@
 - (void)setDeviceDiscoveredCallback:(CDVInvokedUrlCommand*)command;
 - (void)setDeviceGoneCallback:(CDVInvokedUrlCommand*)command;
 
+- (void)setAvailabilityChangedCallback:(CDVInvokedUrlCommand*)command;
+- (void)setAdapterStatusChangedCallback:(CDVInvokedUrlCommand*)command;
+- (void)setConnectionChangedCallback:(CDVInvokedUrlCommand*)command;
+
+- (void)isAvailable:(CDVInvokedUrlCommand*)command;
+- (void)isEnabled:(CDVInvokedUrlCommand*)command;
+- (void)isConnected:(CDVInvokedUrlCommand*)command;
+
 @end
 
