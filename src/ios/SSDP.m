@@ -6,6 +6,7 @@
 #import "SSDPServiceTypes.h"
 #import "SSDPService.h"
 #import "Reachability.h"
+#import "SMTWiFiStatus.h"
 
 NSString *const SSDPMulticastGroupAddress = @"239.255.255.250";
 int const SSDPMulticastUDPPort = 1900;
@@ -85,6 +86,7 @@ const int BYEBYE_TAG = 1000;
         
         self.currentNetworkStatus = [reachability currentReachabilityStatus];
         lastIsEnabled = [self isEnabled];
+        lastIsConnected = [self isConnected];
         
         NSDictionary *availableInterfaces = [SSDPServiceBrowser availableNetworkInterfaces];
         if (self.currentNetworkStatus == NotReachable) {
@@ -112,11 +114,6 @@ const int BYEBYE_TAG = 1000;
 -(void) invokeConnectionChangedCallback {
     self.currentNetworkStatus = [reachability currentReachabilityStatus];
     
-    if (self.currentNetworkStatus == ReachableViaWWAN) {
-        [self invokeAdapterStatusChangedCallback];
-        return;
-    }
-    
     if (connectionChangedCallbackId.length == 0) {
         return;
     }
@@ -127,9 +124,8 @@ const int BYEBYE_TAG = 1000;
 - (void) handleNetworkChangeForAdvertising:(NSNotification *)notice
 {
     self.currentNetworkStatus = [reachability currentReachabilityStatus];
-    [self invokeConnectionChangedCallback];
-    
     [self restartAdvertising];
+    [self invokeConnectionChangedCallback];
 }
 
 - (void) handleNetworkChangeForSearching:(NSNotification *)notice
@@ -156,16 +152,10 @@ const int BYEBYE_TAG = 1000;
         [pluginResult1 setKeepCallbackAsBool:YES];
         [self.commandDelegate sendPluginResult:pluginResult1 callbackId:adapterStatusChangedCallbackId];
     }
-    
-    if (self.currentNetworkStatus != ReachableViaWWAN || connectionChangedCallbackId.length == 0) {
-        return;
-    }
-    
-    [self checkIfConnectedAndInvokeConnectionChangedCallback];
 }
 
 -(void)checkIfConnectedAndInvokeConnectionChangedCallback {
-    bool isConnected = [self isConnectedForRemoteHostStatus:self.currentNetworkStatus];
+    bool isConnected = [self isConnected];
     
     if (isConnected == lastIsConnected) return;
     
@@ -179,6 +169,7 @@ const int BYEBYE_TAG = 1000;
 
 -(void)restartSearching {
     [self invokeAdapterStatusChangedCallback];
+    [self invokeConnectionChangedCallback];
     
     [reachability stopNotifier];
     [reachability startNotifier];
@@ -240,7 +231,7 @@ const int BYEBYE_TAG = 1000;
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(handleNetworkChangeForSearching:)
                                                  name:kReachabilityChangedNotification object:nil];
-//    reachability = [Reachability reachabilityForInternetConnection];
+
     [reachability stopNotifier];
     [reachability startNotifier];
 }
@@ -270,7 +261,7 @@ const int BYEBYE_TAG = 1000;
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(handleNetworkChangeForAdvertising:)
                                                  name:kReachabilityChangedNotification object:nil];
-//    reachability = [Reachability reachabilityForInternetConnection];
+
     [reachability stopNotifier];
     [reachability startNotifier];
 }
@@ -279,6 +270,7 @@ const int BYEBYE_TAG = 1000;
     [self addAdvertisingObservers];
     
     lastIsEnabled = [self isEnabled];
+    lastIsConnected = [self isConnected];
     
     CDVPluginResult* pluginResult = nil;
     
@@ -319,6 +311,12 @@ const int BYEBYE_TAG = 1000;
     multicastSocket = [[GCDAsyncUdpSocket alloc] initWithDelegate:self delegateQueue:dispatch_get_main_queue()];
     
     NSString *errorMessage;
+    if (![multicastSocket enableReusePort:YES error:&error]) {
+        errorMessage = [NSString stringWithFormat:@"Error enabling port reuse: %@", [error localizedDescription]];
+        NSLog(@"%@", errorMessage);
+        return false;
+    }
+    
     if (![multicastSocket bindToPort:SSDPMulticastUDPPort error:&error]) {
         errorMessage = [NSString stringWithFormat:@"Error binding to port 1900: %@", [error localizedDescription]];
         NSLog(@"%@", errorMessage);
@@ -352,6 +350,11 @@ const int BYEBYE_TAG = 1000;
     
     unicastSocket = [[GCDAsyncUdpSocket alloc] initWithDelegate:self delegateQueue:dispatch_get_main_queue()];
     
+    if (![unicastSocket enableReusePort:YES error:&error]) {
+        errorMessage = [NSString stringWithFormat:@"Error enabling port reuse (unicast socket): %@", [error localizedDescription]];
+        NSLog(@"%@", errorMessage);
+        return false;
+    }
     if (![unicastSocket bindToPort:0 error:&error])
     {
         errorMessage = [NSString stringWithFormat:@"Error binding to port 0 (unicast socket): %@", [error localizedDescription]];
@@ -372,6 +375,7 @@ const int BYEBYE_TAG = 1000;
 
 -(void)restartAdvertising {
     [self invokeAdapterStatusChangedCallback];
+    [self invokeConnectionChangedCallback];
     [reachability stopNotifier];
     [reachability startNotifier];
     if (multicastSocket) {
@@ -609,10 +613,7 @@ withFilterContext:(id)filterContext
 }
 
 - (bool)isEnabled {
-    NSDictionary *availableInterfaces = [SSDPServiceBrowser availableNetworkInterfaces];
-//    return availableInterfaces[@"en0"] || availableInterfaces[@"bridge100"] ? true : false;
-    NetworkStatus status = [reachability currentReachabilityStatus];
-    return availableInterfaces[@"en0"] || status == ReachableViaWWAN ? true : false;
+    return [SMTWiFiStatus isWiFiEnabled];
 }
 
 - (void)isEnabled:(CDVInvokedUrlCommand*)command {
@@ -622,16 +623,14 @@ withFilterContext:(id)filterContext
 }
 
 - (void)isConnected:(CDVInvokedUrlCommand*)command {
-    NetworkStatus remoteHostStatus = [reachability currentReachabilityStatus];
-    bool isConnected = [self isConnectedForRemoteHostStatus:remoteHostStatus];
+    bool isConnected = [self isConnected];
     CDVPluginResult* pluginResult = nil;
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsBool:isConnected];
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
-- (bool)isConnectedForRemoteHostStatus:(NetworkStatus) remoteHostStatus {
-    NSDictionary *availableInterfaces = [SSDPServiceBrowser availableNetworkInterfaces];
-    return (remoteHostStatus == ReachableViaWiFi || ((remoteHostStatus == ReachableViaWWAN) && availableInterfaces[@"bridge100"]));
+- (bool)isConnected {
+    return [SMTWiFiStatus isWiFiConnected];
 }
 
 @end

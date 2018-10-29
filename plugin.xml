@@ -77,6 +77,7 @@
         <header-file src="src/ios/CocoaSSDP-master/Classes/SSDPServiceTypes.h" />
         <header-file src="src/ios/SSDP.h" />
         <header-file src="src/ios/SSDPMessage.h" />
+        <header-file src="src/ios/SMTWiFiStatus.h" />
         <source-file src="src/ios/Reachability/Reachability.m" />
         <source-file src="src/ios/CocoaAsyncSocket/Source/GCD/GCDAsyncSocket.m" />
         <source-file src="src/ios/CocoaAsyncSocket/Source/GCD/GCDAsyncUdpSocket.m" />
@@ -85,6 +86,7 @@
         <source-file src="src/ios/CocoaSSDP-master/Classes/SSDPServiceTypes.m" />
         <source-file src="src/ios/SSDP.m" />
         <source-file src="src/ios/SSDPMessage.m" />
+        <source-file src="src/ios/SMTWiFiStatus.m" />
 
         <config-file parent="com.apple.developer.networking.wifi-info" target="*/Entitlements-Debug.plist">
             <true/>
